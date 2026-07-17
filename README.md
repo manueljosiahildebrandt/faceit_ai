@@ -1,6 +1,6 @@
 # Faceit AI
 
-**Version 0.0.5** — Local GDPR-aware face detection, matching, and consent-based photo decisions. No cloud APIs. Day-to-day work happens in the **browser**; you do not need the command line after setup.
+**Version 0.0.6** — Local GDPR-aware face detection, matching, and consent-based photo decisions. No cloud APIs. Day-to-day work happens in the **browser**; you do not need the command line after setup.
 
 ## Requirements
 
@@ -39,12 +39,12 @@ git clone <this-repo-url>
 cd faceit_ai
 python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -e .
+pip install -e ".[postgres]"
 cp config/default.example.yaml config/default.yaml
 faceit_ai_web
 ```
 
-Optional shared Postgres driver: `pip install -e ".[postgres]"`.
+The `[postgres]` extra installs the `psycopg` driver needed for a shared PostgreSQL URL (Synology etc.). Local SQLite still works without it; launchers install the extra automatically when missing.
 
 ## Local vs shared database
 

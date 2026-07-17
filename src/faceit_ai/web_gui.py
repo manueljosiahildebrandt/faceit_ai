@@ -2534,7 +2534,7 @@ def _get_active_runs_cached() -> list[dict[str, object]]:
     return runs
 
 
-def _test_db_connection(url: str) -> dict[str, object]:
+def _test_db_connection(url: str, *, lang: str = DEFAULT_LANG) -> dict[str, object]:
     """Try to connect to the given DB URL (or the effective one if empty)."""
     url = os.path.expandvars((url or "").strip())
     if not url:
@@ -2543,14 +2543,23 @@ def _test_db_connection(url: str) -> dict[str, object]:
         except Exception as e:
             return {"ok": False, "error": f"could not resolve configured database: {e}"}
     backend = url.split("://", 1)[0] if "://" in url else "database"
+    looks_postgres = "postgresql" in backend.lower() or "postgres" in backend.lower()
     try:
         engine = create_engine(url, future=True)
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
         engine.dispose()
         return {"ok": True, "backend": backend}
+    except ModuleNotFoundError as e:
+        missing = str(getattr(e, "name", "") or e)
+        if looks_postgres or "psycopg" in missing.lower():
+            return {"ok": False, "error": _t("settings.db.missing_psycopg", lang)}
+        msg = str(e).splitlines()[0] if str(e) else e.__class__.__name__
+        return {"ok": False, "error": f"{e.__class__.__name__}: {msg}"}
     except Exception as e:  # surface the driver error to the operator
         msg = str(e).splitlines()[0] if str(e) else e.__class__.__name__
+        if looks_postgres and "psycopg" in msg.lower():
+            return {"ok": False, "error": _t("settings.db.missing_psycopg", lang)}
         return {"ok": False, "error": f"{e.__class__.__name__}: {msg}"}
 
 
@@ -3706,7 +3715,7 @@ function setLang(code) {{
         if parsed.path == "/api/test_db":
             qs = parse_qs(parsed.query)
             url = (qs.get("url", [""])[0] or "").strip()
-            self._send_json(_test_db_connection(url))
+            self._send_json(_test_db_connection(url, lang=self._lang()))
             return
         if parsed.path == "/api/person_photos":
             qs = parse_qs(parsed.query)

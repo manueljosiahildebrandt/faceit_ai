@@ -1191,6 +1191,10 @@
     "de": "Fehlgeschlagen: {error}",
     "en": "Failed: {error}"
   },
+  "settings.db.missing_psycopg": {
+    "de": "PostgreSQL-Treiber fehlt (psycopg). Im Projektordner mit aktivem .venv ausführen: python -m pip install -e \".[postgres]\" — danach Faceit AI neu starten.",
+    "en": "PostgreSQL driver missing (psycopg). In the project folder with .venv active run: python -m pip install -e \".[postgres]\" — then restart Faceit AI."
+  },
   "settings.db.hint": {
     "de": "Nach Änderung der Datenbank-URL zuerst die Einstellungen speichern und dann einmalig init_db gegen die neue Datenbank ausführen (und migrate_sqlite_to_db, falls vorhandene Daten übernommen werden sollen).",
     "en": "After changing the database URL, save settings, then run init_db once against the new database (and migrate_sqlite_to_db if you want to move existing data)."

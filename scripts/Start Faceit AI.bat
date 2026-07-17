@@ -22,11 +22,12 @@ if not exist ".venv\" (
 
 call .venv\Scripts\activate.bat
 
-python -c "import faceit_ai" >nul 2>&1
+REM Base app + optional Postgres driver (needed for shared DB URL / Test connection).
+python -c "import faceit_ai, psycopg" >nul 2>&1
 if errorlevel 1 (
   echo Installing Faceit AI (first run can take several minutes^)...
   python -m pip install --upgrade pip
-  python -m pip install -e .
+  python -m pip install -e ".[postgres]"
 )
 
 if not exist "config\default.yaml" (

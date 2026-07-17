@@ -23,10 +23,11 @@ fi
 # shellcheck disable=SC1091
 source .venv/bin/activate
 
-if ! python -c "import faceit_ai" >/dev/null 2>&1; then
+# Base app + optional Postgres driver (needed for shared DB URL / Test connection).
+if ! python -c "import faceit_ai, psycopg" >/dev/null 2>&1; then
   echo "Installing Faceit AI (first run can take several minutes)…"
   python -m pip install --upgrade pip
-  python -m pip install -e .
+  python -m pip install -e ".[postgres]"
 fi
 
 if [ ! -f config/default.yaml ]; then

@@ -7,6 +7,7 @@ import json
 import logging
 import mimetypes
 import os
+import platform
 import re
 import signal
 import subprocess
@@ -416,9 +417,72 @@ def _cli_path(name: str) -> str:
     return str(local) if local.is_file() else name
 
 
-def _pick_folder_via_osascript() -> str:
-    script = 'POSIX path of (choose folder with prompt "Select folder for faceit_ai web UI")'
+def _pick_folder_via_osascript(prompt: str) -> str:
+    # Escape for AppleScript double-quoted string.
+    safe = prompt.replace("\\", "\\\\").replace('"', '\\"')
+    script = f'POSIX path of (choose folder with prompt "{safe}")'
     return subprocess.check_output(["osascript", "-e", script], text=True).strip()
+
+
+def _pick_folder_via_powershell(prompt: str) -> str:
+    # FolderBrowserDialog needs STA; escape single quotes for PowerShell literal.
+    safe = prompt.replace("'", "''")
+    script = (
+        "Add-Type -AssemblyName System.Windows.Forms; "
+        "$f = New-Object System.Windows.Forms.FolderBrowserDialog; "
+        f"$f.Description = '{safe}'; "
+        "$f.ShowNewFolderButton = $true; "
+        "if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { "
+        "Write-Output $f.SelectedPath "
+        "} else { exit 1 }"
+    )
+    out = subprocess.check_output(
+        ["powershell", "-NoProfile", "-STA", "-Command", script],
+        text=True,
+        stderr=subprocess.STDOUT,
+    ).strip()
+    if not out:
+        raise subprocess.CalledProcessError(1, "powershell")
+    return out
+
+
+def _pick_folder_via_zenity(prompt: str) -> str:
+    return subprocess.check_output(
+        ["zenity", "--file-selection", "--directory", "--title", prompt],
+        text=True,
+    ).strip()
+
+
+def _pick_folder_via_tk(prompt: str) -> str:
+    import tkinter as tk
+    from tkinter import filedialog
+
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        root.attributes("-topmost", True)
+    except tk.TclError:
+        pass
+    path = filedialog.askdirectory(title=prompt, mustexist=True)
+    root.destroy()
+    if not path:
+        raise subprocess.CalledProcessError(1, "tkinter")
+    return str(path)
+
+
+def _pick_folder(*, lang: str = DEFAULT_LANG) -> str:
+    """Native folder dialog on the machine running the web server (local UI)."""
+    prompt = _t("osascript.pick_folder", lang)
+    system = platform.system()
+    if system == "Darwin":
+        return _pick_folder_via_osascript(prompt)
+    if system == "Windows":
+        return _pick_folder_via_powershell(prompt)
+    # Linux / other: prefer zenity, then tkinter.
+    try:
+        return _pick_folder_via_zenity(prompt)
+    except (FileNotFoundError, OSError, subprocess.SubprocessError):
+        return _pick_folder_via_tk(prompt)
 
 
 # analyze_photos now prints per-metric lines, e.g.:
@@ -3703,7 +3767,7 @@ function setLang(code) {{
             return
         if parsed.path == "/api/pick_folder":
             try:
-                picked = _pick_folder_via_osascript()
+                picked = _pick_folder(lang=self._lang())
                 self._send_json({"ok": True, "path": picked})
             except subprocess.CalledProcessError as e:
                 self._send_json(

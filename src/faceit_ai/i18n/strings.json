@@ -324,8 +324,8 @@
     "en": "Photo not found."
   },
   "api.picker_cancelled": {
-    "de": "Finder-Auswahl abgebrochen oder fehlgeschlagen ({code}).",
-    "en": "Finder picker cancelled or failed ({code})."
+    "de": "Ordnerauswahl abgebrochen oder fehlgeschlagen ({code}).",
+    "en": "Folder picker cancelled or failed ({code})."
   },
   "api.reregister_msg": {
     "de": "{name} wird re-registriert (Embeddings löschen + Ordner erneut scannen)…",
@@ -400,16 +400,16 @@
     "en": "Package version from pyproject.toml"
   },
   "common.alert.picker_failed": {
-    "de": "Finder-Ordnerauswahl konnte nicht geöffnet werden",
-    "en": "Could not open Finder folder picker"
+    "de": "Ordnerauswahl konnte nicht geöffnet werden",
+    "en": "Could not open folder picker"
   },
   "common.bad_request": {
     "de": "Ungültige Anfrage",
     "en": "Bad Request"
   },
   "common.choose_finder": {
-    "de": "Im Finder auswählen",
-    "en": "Choose in Finder"
+    "de": "Ordner wählen",
+    "en": "Choose folder"
   },
   "common.clear": {
     "de": "Leeren",

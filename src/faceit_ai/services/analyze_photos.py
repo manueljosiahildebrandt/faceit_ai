@@ -37,7 +37,7 @@ from faceit_ai.vision.image_loader import (
     load_image_for_pipeline,
 )
 from faceit_ai.services.collect_matches import collect_strong_matches_under_folder
-from faceit_ai.services.flagged_export import export_flagged_under_folder
+from faceit_ai.services.flagged_export import export_flagged_under_folder, prune_stale_flagged_exports
 from faceit_ai.services.folder_ingest import run_folder_ingest
 from faceit_ai.services.processing_runs import heartbeat
 from faceit_ai.vision.insightface_backend import InsightFaceBackend
@@ -329,6 +329,19 @@ def run_analyze(
         log_run_phase(
             log,
             PHASE_CHECK,
+            "Pruning stale flagged exports…",
+        )
+        with session_scope(session_factory) as session:
+            prune_stale_flagged_exports(
+                session=session,
+                scan_root=scan_root,
+                action=export_flagged,
+                audit=audit,
+                logger=log,
+            )
+        log_run_phase(
+            log,
+            PHASE_CHECK,
             "Running flagged export (%s)…",
             export_flagged,
         )
@@ -373,6 +386,7 @@ def run_analyze(
                     audit=audit,
                     logger=log,
                     overwrite=force,
+                    backend=backend,
                 )
             except Exception:
                 log.exception("collect_strong batch failed (non-fatal)")

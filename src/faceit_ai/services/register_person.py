@@ -91,15 +91,16 @@ def run_register(
                 log.warning("skip unreadable registration file %s — %s", path, err)
                 continue
             faces = backend.analyze(loaded_load.bgr)
-            if not faces:
-                log.warning("no face in registration image %s", path)
+            confident = [fd for fd in faces if fd.det_score >= 0.5]
+            if len(confident) != 1:
+                log.warning(
+                    "skip registration file %s — expected 1 face, found %d",
+                    path,
+                    len(confident),
+                )
                 continue
-            # Registration: one frontal face per image is typical; store all high-confidence faces.
-            for fd in faces:
-                if fd.det_score < 0.5:
-                    continue
-                repo.add_embedding(person.id, fd.embedding)
-                count += 1
+            repo.add_embedding(person.id, confident[0].embedding)
+            count += 1
 
     elapsed = time.perf_counter() - t0
     log_run_phase(

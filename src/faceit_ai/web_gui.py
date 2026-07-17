@@ -439,6 +439,24 @@ def _cli_path(name: str) -> str:
     return name
 
 
+_INSIGHTFACE_BACKEND = None
+_INSIGHTFACE_LOCK = threading.Lock()
+
+
+def _get_insightface_backend(settings=None):
+    """Lazy singleton for Review crop / single-photo reprocess."""
+    global _INSIGHTFACE_BACKEND
+    from faceit_ai.vision.insightface_backend import InsightFaceBackend
+
+    with _INSIGHTFACE_LOCK:
+        if _INSIGHTFACE_BACKEND is None:
+            s = settings or load_settings()
+            _INSIGHTFACE_BACKEND = InsightFaceBackend(
+                s.insightface_root, s.pipeline.insightface
+            )
+        return _INSIGHTFACE_BACKEND
+
+
 def _pick_folder_via_osascript(prompt: str) -> str:
     # Escape for AppleScript double-quoted string.
     safe = prompt.replace("\\", "\\\\").replace('"', '\\"')
@@ -2759,6 +2777,15 @@ def _save_review_face_assignments_request(
     people_root = _resolved_people_root()
     _, session_factory = create_engine_and_session_factory(settings.database_url)
     audit = logging.getLogger("faceit_ai.audit")
+    export_mode = settings.export.flagged
+    if export_mode not in ("copy", "move"):
+        export_mode = "off"
+    metadata = build_metadata_sync(
+        settings,
+        log=logging.getLogger("faceit_ai.metadata"),
+        audit=audit,
+    )
+    backend = _get_insightface_backend(settings)
     try:
         with session_scope(session_factory) as session:
             result = save_review_face_assignments(
@@ -2771,6 +2798,10 @@ def _save_review_face_assignments_request(
                 settings=settings,
                 people_root=people_root,
                 audit=audit,
+                backend=backend,
+                session_factory=session_factory,
+                metadata=metadata,
+                export_flagged=export_mode,  # type: ignore[arg-type]
             )
     except ValueError as e:
         return {"ok": False, "error": str(e)}
@@ -2783,6 +2814,10 @@ def _save_review_face_assignments_request(
         "updated": result.updated,
         "crops_written": result.crops_written,
         "embeddings_added": result.embeddings_added,
+        "reprocessed": result.reprocessed,
+        "new_status": result.new_status,
+        "new_reason": result.new_reason,
+        "flagged_pruned": result.flagged_pruned,
     }
 
 
@@ -2825,6 +2860,7 @@ def _confirm_review_blocked_request(
         log=logging.getLogger("faceit_ai.metadata"),
         audit=audit,
     )
+    backend = _get_insightface_backend(settings)
     try:
         with session_scope(session_factory) as session:
             result = confirm_review_blocked(
@@ -2838,6 +2874,7 @@ def _confirm_review_blocked_request(
                 export_action=export_mode,  # type: ignore[arg-type]
                 audit=audit,
                 status=want,  # type: ignore[arg-type]
+                backend=backend,
             )
     except ValueError as e:
         return {"ok": False, "error": str(e)}
@@ -5180,6 +5217,11 @@ async function persistFaceAssignment(faceId, slug) {{
     reviewFacePicksInitial[faceId] = slug || '';
     const face = (reviewDetail.faces || []).find(function(f) {{ return f.face_id === faceId; }});
     if (face) face.person_name = slug || null;
+    if (d.reprocessed && d.new_status && d.new_status !== reviewStatus) {{
+      closeReviewModal();
+      loadReviewPhotos();
+      return;
+    }}
     if (slug && d.crops_written === 0 && reviewDetail.missing_on_disk) {{
       // Source missing — assignment saved in DB only.
     }}

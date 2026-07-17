@@ -28,6 +28,11 @@ from faceit_ai.reporting import format_summary_text, query_decision_summary
 from faceit_ai.services.analyze_photos import run_analyze, was_analyze_stopped_early
 from faceit_ai.services.folder_ingest import resolve_ingest_destination
 from faceit_ai.services.processing_runs import claim_folder, finish_run
+from faceit_ai.services.audit_people_portraits import (
+    audit_people_portraits,
+    fix_people_portraits,
+    resolve_people_root,
+)
 from faceit_ai.services.register_person import run_register
 from faceit_ai.services.redecide_and_sync_person import run_redecide_and_sync_person
 from faceit_ai.services.set_consent import run_set_consent
@@ -482,11 +487,123 @@ def migrate_sqlite_to_db_cli(source: Path, target_url: str | None) -> None:
     click.echo(f"Migrated into {_mask_db_url(dest)}: {summary}")
 
 
+@click.command("audit_people_portraits")
+@click.option(
+    "--people-root",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    default=None,
+    help="Override collect.people_root / paths.people_dir from config.",
+)
+@click.option("--quiet", is_flag=True, help="Only print problem files.")
+@click.option(
+    "--fix",
+    is_flag=True,
+    help="Re-crop portraits with 2+ faces (scan + fix in one run).",
+)
+@click.option(
+    "--dry-run",
+    is_flag=True,
+    help="With --fix: show what would be re-cropped without writing files.",
+)
+@click.option(
+    "--min-faces",
+    type=int,
+    default=2,
+    show_default=True,
+    help="With --fix: minimum face count to trigger re-crop.",
+)
+def audit_people_portraits_cli(
+    people_root: Path | None,
+    quiet: bool,
+    fix: bool,
+    dry_run: bool,
+    min_faces: int,
+) -> None:
+    """Scan people-folder portraits; report or re-crop multi-face images."""
+    settings = load_settings()
+    setup_logging(settings.logging.level, settings.logging.audit_log_path)
+    root = people_root or resolve_people_root(settings)
+    if root is None:
+        click.echo(
+            "People folder not configured. Set collect.people_root or paths.people_dir in config.",
+            err=True,
+        )
+        sys.exit(1)
+    backend = InsightFaceBackend(settings.insightface_root, settings.pipeline.insightface)
+
+    if fix:
+        if min_faces < 2:
+            click.echo("--min-faces must be at least 2.", err=True)
+            sys.exit(1)
+        _, session_factory = create_engine_and_session_factory(settings.database_url)
+        try:
+            result = fix_people_portraits(
+                settings=settings,
+                backend=backend,
+                session_factory=session_factory,
+                people_root=root,
+                min_faces=min_faces,
+                dry_run=dry_run,
+                show_progress=not quiet,
+            )
+        except (ValueError, FileNotFoundError) as e:
+            click.echo(str(e), err=True)
+            sys.exit(1)
+        except Exception:
+            logging.getLogger("faceit_ai").exception("fix_people_portraits failed")
+            sys.exit(1)
+
+        if not quiet:
+            click.echo(f"Scanned {result.scanned} file(s) under {result.root}")
+            click.echo(f"OK already (1 face): {result.ok_already}")
+            action = "Would fix" if dry_run else "Fixed"
+            click.echo(f"{action}: {result.fixed}")
+            click.echo(f"Failed: {result.failed}")
+            if result.skipped:
+                click.echo(f"Skipped (< {min_faces} faces): {result.skipped}")
+        for row in result.rows:
+            try:
+                rel = row.path.resolve().relative_to(result.root)
+            except ValueError:
+                rel = row.path
+            click.echo(f"  {rel} — {row.action}: {row.detail}")
+        if result.failed:
+            sys.exit(2 if result.fixed else 1)
+        return
+
+    try:
+        result = audit_people_portraits(
+            settings=settings,
+            backend=backend,
+            people_root=root,
+            show_progress=not quiet,
+        )
+    except (ValueError, FileNotFoundError) as e:
+        click.echo(str(e), err=True)
+        sys.exit(1)
+    except Exception:
+        logging.getLogger("faceit_ai").exception("audit_people_portraits failed")
+        sys.exit(1)
+
+    if not quiet:
+        click.echo(f"Scanned {result.scanned} file(s) under {result.root}")
+        click.echo(f"OK (1 face): {result.ok}")
+        click.echo(f"Problems: {len(result.problems)}")
+    for row in result.problems:
+        try:
+            rel = row.path.resolve().relative_to(result.root)
+        except ValueError:
+            rel = row.path
+        click.echo(f"  {rel} — {row.detail}")
+    if result.problems:
+        sys.exit(2)
+
+
 def main() -> None:
     # Reserved for `python -m faceit_ai` if you add a group later.
     click.echo(
         "Use console_scripts: analyze_photos / sync_metadata / register_person / "
-        "set_person_consent / report_decisions",
+        "audit_people_portraits / set_person_consent / report_decisions",
         err=True,
     )
 

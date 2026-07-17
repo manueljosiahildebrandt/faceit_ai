@@ -420,3 +420,192 @@ def list_resolved_paths_under_root(
     statuses: Collection[str],
 ) -> list[Path]:
     return [p for p, _ in list_resolved_paths_with_status(session, scan_root, statuses)]
+
+
+def _find_asset_and_decision(
+    session: Session,
+    *,
+    path: Path,
+    root_res: Path,
+) -> tuple[Asset | None, AssetDecision | None]:
+    """Resolve ``Asset`` (+ decision) for a path under ``scan_root``."""
+    candidates: list[Path] = [path]
+    restore = _restore_path_outside_flagged(path, root_res)
+    if restore is not None:
+        candidates.append(restore)
+
+    asset: Asset | None = None
+    for candidate in candidates:
+        for v in _path_variants(candidate):
+            asset = session.scalar(select(Asset).where(Asset.path == v))
+            if asset is not None:
+                break
+        if asset is not None:
+            break
+
+    if asset is None:
+        keys = {folder_claim_key(str(c)) for c in candidates}
+        name = path.name
+        if name:
+            for row in session.scalars(
+                select(Asset).where(Asset.path.endswith(name))
+            ).all():
+                if folder_claim_key(row.path) in keys:
+                    asset = row
+                    break
+
+    if asset is None:
+        return None, None
+    decision = session.scalar(
+        select(AssetDecision).where(AssetDecision.asset_id == asset.id)
+    )
+    return asset, decision
+
+
+def _flagged_tier_from_path(flagged_file: Path, flagged_base: Path) -> str | None:
+    try:
+        rel = flagged_file.resolve().relative_to(flagged_base)
+    except ValueError:
+        return None
+    if rel.parts and rel.parts[0] in ("blocked", "review"):
+        return str(rel.parts[0])
+    return None
+
+
+def _restore_path_outside_flagged(flagged_file: Path, root_res: Path) -> Path | None:
+    """Map ``flagged/<tier>/…/file`` back to ``<scan_root>/…/file``."""
+    try:
+        rel = flagged_file.resolve().relative_to(root_res)
+    except ValueError:
+        return None
+    parts = rel.parts
+    if len(parts) >= 3 and parts[0] == "flagged" and parts[1] in ("blocked", "review"):
+        return (root_res / Path(*parts[2:])).resolve()
+    return None
+
+
+def _is_stale_flagged_file(
+    *,
+    tier: str,
+    decision: AssetDecision | None,
+) -> bool:
+    if decision is None:
+        return True
+    status = str(decision.status)
+    if status == "ok":
+        return True
+    if status not in ("blocked", "review"):
+        return True
+    return status != tier
+
+
+def prune_stale_flagged_exports(
+    *,
+    session: Session,
+    scan_root: Path,
+    action: Literal["copy", "move"],
+    flagged_dirname: str = "flagged",
+    audit: logging.Logger | None = None,
+    logger: logging.Logger | None = None,
+) -> tuple[int, int, list[str]]:
+    """Remove flagged copies that no longer match DB decisions.
+
+    Copy mode: delete stale files under ``flagged/{blocked,review}/``.
+    Move mode: move restored files back outside ``flagged/`` and repoint ``Asset.path``.
+
+    Returns ``(n_removed, n_restored, warnings)``.
+    """
+    log = logger or logging.getLogger("faceit_ai")
+    root_res = scan_root.resolve()
+    flagged_base = (root_res / flagged_dirname).resolve()
+    if not flagged_base.is_dir():
+        return 0, 0, []
+
+    n_removed = 0
+    n_restored = 0
+    warnings: list[str] = []
+
+    for tier in ("blocked", "review"):
+        tier_root = flagged_base / tier
+        if not tier_root.is_dir():
+            continue
+        for flagged_file in sorted(tier_root.rglob("*")):
+            if not flagged_file.is_file():
+                continue
+            file_tier = _flagged_tier_from_path(flagged_file, flagged_base)
+            if file_tier is None:
+                continue
+
+            asset, decision = _find_asset_and_decision(
+                session, path=flagged_file, root_res=root_res
+            )
+            if not _is_stale_flagged_file(tier=file_tier, decision=decision):
+                continue
+
+            asset_path_matches_flagged = False
+            if asset is not None:
+                try:
+                    asset_path_matches_flagged = (
+                        Path(asset.path).resolve() == flagged_file.resolve()
+                    )
+                except OSError:
+                    asset_path_matches_flagged = (
+                        folder_claim_key(asset.path) == folder_claim_key(flagged_file)
+                    )
+
+            if action == "move" and asset_path_matches_flagged and asset is not None:
+                restore = _restore_path_outside_flagged(flagged_file, root_res)
+                if restore is None:
+                    warnings.append(f"prune: cannot compute restore path for {flagged_file}")
+                    continue
+                if restore.exists() and restore.resolve() != flagged_file.resolve():
+                    warnings.append(
+                        f"prune: restore blocked, destination exists: {restore}"
+                    )
+                    continue
+                try:
+                    restore.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(flagged_file), str(restore))
+                    repoint_asset_path_after_move(
+                        session,
+                        old_paths=[flagged_file, asset.path],
+                        new_path=restore,
+                        logger=log,
+                    )
+                    n_restored += 1
+                    if audit is not None:
+                        log_export_audit(
+                            audit,
+                            src=str(flagged_file),
+                            dest=str(restore),
+                            decision_status=str(decision.status if decision else "none"),
+                            action="prune_restore",
+                        )
+                except OSError as e:
+                    warnings.append(f"prune restore failed {flagged_file}: {e}")
+                continue
+
+            try:
+                flagged_file.unlink()
+                n_removed += 1
+                if audit is not None:
+                    log_export_audit(
+                        audit,
+                        src=str(flagged_file),
+                        dest="",
+                        decision_status=str(decision.status if decision else "none"),
+                        action="prune_delete",
+                        extra={"tier": file_tier},
+                    )
+            except OSError as e:
+                warnings.append(f"prune delete failed {flagged_file}: {e}")
+
+    if n_removed or n_restored:
+        log.info(
+            "prune_stale_flagged — removed=%d restored=%d root=%s action=%s",
+            n_removed,
+            n_restored,
+            root_res,
+            action,
+        )
+    return n_removed, n_restored, warnings

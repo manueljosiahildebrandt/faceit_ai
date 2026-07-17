@@ -1,6 +1,6 @@
 # Faceit AI
 
-**Version 0.0.14** — Local GDPR-aware face detection, matching, and consent-based photo decisions. No cloud APIs. Day-to-day work happens in the **browser**; you do not need the command line after setup.
+**Version 0.0.15** — Local GDPR-aware face detection, matching, and consent-based photo decisions. No cloud APIs. Day-to-day work happens in the **browser**; you do not need the command line after setup.
 
 ## Requirements
 
@@ -67,6 +67,37 @@ set_person_consent "Alice" --revoke
 ```
 
 See [docs/operations-technical.md](docs/operations-technical.md) for matching, export, Lightroom/ExifTool, and multi-PC details.
+
+### Audit and fix people-folder portraits
+
+New collects and Review confirmations write **single-face** portrait crops when possible. Older files (full-photo fallbacks, manual uploads) may still contain **2+ faces**.
+
+One command scans your configured people folder and optionally re-crops problem files in place:
+
+```bash
+cd /path/to/faceit_ai
+source .venv/bin/activate
+pip install -e .    # once after upgrade
+
+# Report only (exit code 2 if any file ≠ exactly 1 face):
+audit_people_portraits
+
+# Preview fixes without writing:
+audit_people_portraits --fix --dry-run
+
+# Scan + re-crop files with 2+ faces (~4 min on CPU for ~500 files):
+audit_people_portraits --fix
+```
+
+**Configuration:** reads `collect.people_root`, or `paths.people_dir` from `config/default.yaml` (same as the People page).
+
+**How `--fix` picks a face:** prefers the linked original shoot file + stored face box from the database; otherwise detects faces in the people-folder file and picks the one best matching that person’s embeddings.
+
+**After fixing:** re-register affected people in the UI (**People → Re-register**) so embeddings match the new crops.
+
+**Options:** `--people-root PATH` override; `--min-faces 2` (default); `--quiet` (progress bar off, problems only).
+
+**Note:** CPU inference is slow and prints little between phases — wait for the summary line, not just model load messages.
 
 ## What is not in this repository
 

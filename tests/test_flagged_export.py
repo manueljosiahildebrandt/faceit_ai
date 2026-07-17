@@ -239,3 +239,109 @@ def test_export_flagged_move_updates_asset_path(tmp_path: Path) -> None:
         a = s.get(Asset, asset_id)
         assert a is not None
         assert Path(a.path).resolve() == dest.resolve()
+
+
+def test_prune_removes_stale_blocked_copy_when_status_ok(tmp_path: Path) -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    sf = sessionmaker(engine, expire_on_commit=False)
+    root = tmp_path / "album"
+    src = root / "day" / "shot.arw"
+    src.parent.mkdir(parents=True)
+    src.write_bytes(b"raw")
+    stale = root / "flagged" / "blocked" / "day" / "shot.arw"
+    stale.parent.mkdir(parents=True)
+    stale.write_bytes(b"raw")
+
+    with sf() as s:
+        a = Asset(path=str(src.resolve()), sha256="prune1")
+        s.add(a)
+        s.flush()
+        s.add(AssetDecision(asset_id=a.id, status="ok", reason="cleared", usage="social"))
+        s.commit()
+
+    from faceit_ai.services.flagged_export import prune_stale_flagged_exports
+
+    with sf() as s:
+        n_removed, n_restored, warns = prune_stale_flagged_exports(
+            session=s,
+            scan_root=root,
+            action="copy",
+            logger=logging.getLogger("prune"),
+        )
+        s.commit()
+    assert n_removed == 1
+    assert n_restored == 0
+    assert not warns
+    assert not stale.exists()
+    assert src.exists()
+
+
+def test_prune_removes_wrong_tier_copy(tmp_path: Path) -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    sf = sessionmaker(engine, expire_on_commit=False)
+    root = tmp_path / "album"
+    src = root / "x.arw"
+    src.parent.mkdir(parents=True)
+    src.write_bytes(b"x")
+    wrong = root / "flagged" / "blocked" / "x.arw"
+    wrong.parent.mkdir(parents=True)
+    wrong.write_bytes(b"x")
+
+    with sf() as s:
+        a = Asset(path=str(src.resolve()), sha256="prune2")
+        s.add(a)
+        s.flush()
+        s.add(AssetDecision(asset_id=a.id, status="review", reason="u", usage="social"))
+        s.commit()
+
+    from faceit_ai.services.flagged_export import prune_stale_flagged_exports
+
+    with sf() as s:
+        n_removed, _, _ = prune_stale_flagged_exports(
+            session=s,
+            scan_root=root,
+            action="copy",
+            logger=logging.getLogger("prune"),
+        )
+    assert n_removed == 1
+    assert not wrong.exists()
+
+
+def test_prune_move_mode_restores_when_status_ok(tmp_path: Path) -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    sf = sessionmaker(engine, expire_on_commit=False)
+    root = tmp_path / "album"
+    flagged = root / "flagged" / "blocked" / "day" / "shot.arw"
+    flagged.parent.mkdir(parents=True)
+    flagged.write_bytes(b"moved")
+
+    with sf() as s:
+        a = Asset(path=str(flagged.resolve()), sha256="prune3")
+        s.add(a)
+        s.flush()
+        s.add(AssetDecision(asset_id=a.id, status="ok", reason="cleared", usage="social"))
+        s.commit()
+        asset_id = a.id
+
+    from faceit_ai.services.flagged_export import prune_stale_flagged_exports
+
+    with sf() as s:
+        _, n_restored, _ = prune_stale_flagged_exports(
+            session=s,
+            scan_root=root,
+            action="move",
+            logger=logging.getLogger("prune"),
+        )
+        s.commit()
+
+    restore = root / "day" / "shot.arw"
+    assert n_restored == 1
+    assert restore.is_file()
+    assert not flagged.exists()
+    with sf() as s:
+        a = s.get(Asset, asset_id)
+        assert a is not None
+        assert Path(a.path).resolve() == restore.resolve()

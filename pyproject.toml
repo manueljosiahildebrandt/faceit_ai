@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "faceit-ai"
-version = "0.0.14"
+version = "0.0.15"
 description = "Local GDPR-aware face recognition pipeline for photo moderation"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -38,6 +38,7 @@ cuda = ["onnxruntime-gpu>=1.17"]
 [project.scripts]
 analyze_photos = "faceit_ai.cli:analyze_photos_cli"
 register_person = "faceit_ai.cli:register_person_cli"
+audit_people_portraits = "faceit_ai.cli:audit_people_portraits_cli"
 report_decisions = "faceit_ai.cli:report_decisions_cli"
 set_person_consent = "faceit_ai.cli:set_person_consent_cli"
 sync_metadata = "faceit_ai.cli:sync_metadata_cli"

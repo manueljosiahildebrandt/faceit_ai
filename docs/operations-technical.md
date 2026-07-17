@@ -24,6 +24,7 @@ python -m pip install -e .
 |----------------------|----------------------------------------|
 | `analyze_photos`     | `faceit_ai.cli:analyze_photos_cli`      |
 | `register_person`    | `faceit_ai.cli:register_person_cli`     |
+| `audit_people_portraits` | `faceit_ai.cli:audit_people_portraits_cli` |
 | `set_person_consent` | `faceit_ai.cli:set_person_consent_cli` |
 | `report_decisions`   | `faceit_ai.cli:report_decisions_cli`    |
 | `init_db`            | `faceit_ai.cli:init_db_cli`             |
@@ -174,8 +175,8 @@ Per face, after picking the best gallery cosine (score = cosine × scale, defaul
 | Condition | Matcher result |
 |-----------|----------------|
 | scaled score \< review threshold (default **200**) | unknown (`person_id` null) |
-| review ≤ scaled \< strong (default **200–230**) | uncertain (identity kept) |
-| scaled ≥ strong (default **230**) | strong match |
+| review ≤ scaled \< strong (default **200–250**) | uncertain (identity kept) |
+| scaled ≥ strong (default **250**) | strong match |
 
 **Image aggregation** (`src/faceit_ai/decision/engine.py`) — precedence:
 
@@ -238,6 +239,7 @@ When `copy` or `move`:
 - Files are placed under **`<input folder>/flagged/blocked/`** or **`…/flagged/review/`** according to `AssetDecision.status`, mirroring relative paths under the input root (`src/faceit_ai/services/flagged_export.py`).
 - Sources already under **`flagged/`** are skipped (no re-export loops).
 - **Idempotent:** if the destination file already exists with the **same size** as the source, the export step skips and writes an audit event `event=asset_export`, `action=skip_identical`.
+- **Prune before export:** when export is enabled, analyze runs `prune_stale_flagged_exports` first — files under `flagged/blocked/` or `flagged/review/` whose DB decision is no longer that tier (including `ok`) are removed. **Copy** mode deletes stale copies; **move** mode restores the file outside `flagged/` and repoints `Asset.path`.
 - Each successful copy/move writes **`log_export_audit`** (`event=asset_export`, `action=copy|move`) to `faceit_ai.audit`.
 
 YAML (optional):
@@ -256,7 +258,43 @@ export:
 
 After analyze, strong face matches (score ≥ `matching.match_threshold_strong`) can be copied into `<people_root>/<person>/` for later manual `register_person`. This is separate from flagged export (blocked/review → `flagged/` under the scan folder).
 
-Optional **`collect.crop_portrait: true`** (off by default; Settings → *Crop portraits for people-folder collect*, or `--collect-crop`) saves face-centered **JPEG portraits** using stored `AssetFace.bbox` coordinates (analyze-space, same decode size as the pipeline). If decode/crop fails, the step **falls back to copying the full source file**. RAW-heavy collects add decode time per collected file; JPEG collects are much faster.
+Optional **`collect.crop_portrait: true`** (off by default; Settings → *Crop portraits for people-folder collect*, or `--collect-crop`) saves face-centered **JPEG portraits** using stored `AssetFace.bbox` coordinates (analyze-space, same decode size as the pipeline). The crop helper **tightens padding** until InsightFace sees exactly one face in the crop; if that fails, the step **falls back to copying the full source file**. RAW-heavy collects add decode time per collected file; JPEG collects are much faster.
+
+### Audit / fix existing people-folder portraits (`audit_people_portraits`)
+
+Use this when portraits were collected before single-face cropping, when collect fell back to full files, or after manual uploads into `people/<name>/`.
+
+Implementation: `src/faceit_ai/services/audit_people_portraits.py` → CLI `audit_people_portraits`.
+
+**People root resolution:** `collect.people_root` if set, else `paths.people_dir` from YAML (web GUI uses the same key).
+
+```bash
+source .venv/bin/activate
+pip install -e .
+
+# Report: list files where detected face count ≠ 1 (det_score ≥ 0.5)
+audit_people_portraits
+
+# One workflow: scan, then re-crop files with ≥ --min-faces (default 2)
+audit_people_portraits --fix --dry-run   # preview
+audit_people_portraits --fix             # overwrite people-folder JPEGs in place
+```
+
+| Flag | Effect |
+|------|--------|
+| `--people-root PATH` | Override configured people folder |
+| `--fix` | After scan, re-crop multi-face portraits |
+| `--dry-run` | With `--fix`, print planned actions only |
+| `--min-faces N` | Re-crop when ≥ N faces detected (default **2**) |
+| `--quiet` | Suppress progress bar; print problems / fix rows only |
+
+**Re-crop logic:** lookup `collected_photo` for destination path → prefer original `source_path` + `AssetFace.bbox` for that person/asset → else detect on source or local file and pick the face best matching stored embeddings → `write_single_face_portrait` (same helper as collect/review).
+
+**Exit codes:** `0` OK; `1` config/IO error; `2` problems remain (audit) or some fixes failed (`--fix`).
+
+**After `--fix`:** run **Re-register** for affected people in the UI so gallery embeddings match the new crops.
+
+**Performance:** full-folder scan on CPU is ~2 minutes per ~500 JPEGs; `--fix` runs detection again on each problem file. Progress bars use `tqdm`; InsightFace model load lines are not the end of the run.
 
 ### Archive before analyze (`ingest` / `--ingest-to`)
 

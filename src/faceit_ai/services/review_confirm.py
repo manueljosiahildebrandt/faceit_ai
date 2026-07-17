@@ -20,11 +20,13 @@ from faceit_ai.persistence.models import Asset, AssetDecision, AssetFace, Person
 from faceit_ai.persistence.repository import ConsentRepository
 from faceit_ai.persistence.session import session_scope
 from faceit_ai.services.collect_matches import _write_cropped_portrait
-from faceit_ai.services.collected_photos import upsert_collected_photo
+from faceit_ai.services.collected_photos import remove_collected_crops, upsert_collected_photo
 from faceit_ai.services.flagged_export import export_single_flagged_asset
+from faceit_ai.services.reprocess_asset import reprocess_single_asset
 from faceit_ai.settings import CollectSettings, Settings
 from faceit_ai.vision.face_crop import parse_bbox_json
 from faceit_ai.vision.image_loader import ImageDecodeError, load_image_for_pipeline
+from faceit_ai.vision.insightface_backend import InsightFaceBackend
 
 
 @dataclass(frozen=True)
@@ -305,6 +307,10 @@ class SaveAssignmentsResult:
     updated: int
     crops_written: int
     embeddings_added: int
+    reprocessed: bool = False
+    new_status: str | None = None
+    new_reason: str | None = None
+    flagged_pruned: int = 0
 
 
 def _collect_face_into_person_folder(
@@ -323,6 +329,7 @@ def _collect_face_into_person_folder(
     audit: logging.Logger | None,
     log: logging.Logger,
     force_embedding: bool = False,
+    backend: InsightFaceBackend | None = None,
 ) -> tuple[bool, bool, str | None]:
     """Write crop + link person/embedding. Returns (crop_written, embedding_added, dest)."""
     name = person_name.strip()
@@ -340,6 +347,7 @@ def _collect_face_into_person_folder(
         image_cfg=settings.pipeline.image,
         collect=eff_collect,
         log=log,
+        backend=backend,
     ):
         crop_written = True
         if audit is not None:
@@ -547,6 +555,10 @@ def save_review_face_assignments(
     audit: logging.Logger | None = None,
     logger: logging.Logger | None = None,
     embedding_dim: int = 512,
+    backend: InsightFaceBackend | None = None,
+    session_factory: sessionmaker[Any] | None = None,
+    metadata: MetadataSyncPort | None = None,
+    export_flagged: Literal["off", "copy", "move"] = "off",
 ) -> SaveAssignmentsResult:
     """Persist face→person matches without changing decision status.
 
@@ -570,6 +582,8 @@ def save_review_face_assignments(
     embeddings_added = 0
     person_counts: Counter[str] = Counter()
     source_path = Path(detail.path)
+    unknown_bboxes: list[tuple[float, float, float, float]] = []
+    reprocess_needed = False
     do_collect = people_root is not None and settings is not None and not detail.missing_on_disk
     eff_collect: CollectSettings | None = None
     if do_collect and settings is not None and people_root is not None:
@@ -592,8 +606,22 @@ def save_review_face_assignments(
 
         name = assign.person_name.strip()
         if not name:
+            old_person_id = face_row.match_person_id
+            try:
+                unk_bbox = parse_bbox_json(str(face_row.bbox))
+                unknown_bboxes.append(unk_bbox)
+            except (ValueError, json.JSONDecodeError):
+                pass
+            if old_person_id is not None:
+                remove_collected_crops(
+                    session,
+                    asset_id=asset_id,
+                    person_id=int(old_person_id),
+                    delete_files=True,
+                )
             face_row.match_person_id = None
             face_row.match_score = None
+            reprocess_needed = True
         elif do_collect and settings is not None and people_root is not None and eff_collect is not None:
             crop_ok, emb_ok, _dest = _collect_face_into_person_folder(
                 session=session,
@@ -609,6 +637,7 @@ def save_review_face_assignments(
                 embedding_dim=embedding_dim,
                 audit=audit,
                 log=log,
+                backend=backend,
             )
             if crop_ok:
                 crops_written += 1
@@ -630,10 +659,45 @@ def save_review_face_assignments(
                 face_row.match_score = 1.0
         updated += 1
     session.flush()
+
+    reprocessed = False
+    new_status: str | None = None
+    new_reason: str | None = None
+    flagged_pruned = 0
+    if (
+        reprocess_needed
+        and backend is not None
+        and settings is not None
+        and session_factory is not None
+    ):
+        try:
+            rp = reprocess_single_asset(
+                asset_id=asset_id,
+                folder=folder,
+                settings=settings,
+                session_factory=session_factory,
+                backend=backend,
+                metadata=metadata,
+                preserve_unknown_bboxes=unknown_bboxes,
+                export_flagged=export_flagged,
+                audit=audit,
+                logger=log,
+            )
+            reprocessed = True
+            new_status = rp.status
+            new_reason = rp.reason
+            flagged_pruned = rp.flagged_pruned
+        except Exception:
+            log.exception("save_review_face_assignments: reprocess failed for asset %s", asset_id)
+
     return SaveAssignmentsResult(
         updated=updated,
         crops_written=crops_written,
         embeddings_added=embeddings_added,
+        reprocessed=reprocessed,
+        new_status=new_status,
+        new_reason=new_reason,
+        flagged_pruned=flagged_pruned,
     )
 
 
@@ -651,6 +715,7 @@ def confirm_review_blocked(
     logger: logging.Logger | None = None,
     embedding_dim: int = 512,
     status: DecisionStatus = "review",
+    backend: InsightFaceBackend | None = None,
 ) -> ConfirmReviewResult:
     log = logger or logging.getLogger("faceit_ai")
     if not face_assignments:
@@ -709,6 +774,7 @@ def confirm_review_blocked(
             audit=audit,
             log=log,
             force_embedding=True,
+            backend=backend,
         )
         if crop_ok:
             crops_written += 1

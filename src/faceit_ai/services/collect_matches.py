@@ -22,13 +22,10 @@ from faceit_ai.logging_setup import PHASE_CHECK, log_collect_audit, log_run_phas
 from faceit_ai.persistence.models import Asset, AssetFace, Person
 from faceit_ai.services.collected_photos import upsert_collected_photo
 from faceit_ai.settings import CollectSettings, ImagePipelineSettings
-from faceit_ai.vision.face_crop import (
-    PortraitCropParams,
-    crop_bgr_to_portrait,
-    parse_bbox_json,
-    write_portrait_jpeg,
-)
+from faceit_ai.vision.face_crop import parse_bbox_json
 from faceit_ai.vision.image_loader import ImageDecodeError, load_image_for_pipeline
+from faceit_ai.vision.insightface_backend import InsightFaceBackend
+from faceit_ai.vision.single_face_crop import write_single_face_portrait
 
 
 def _short_sha8(path: Path) -> str:
@@ -48,14 +45,6 @@ def _is_under(path: Path, root: Path) -> bool:
     return True
 
 
-def _crop_params_from_collect(collect: CollectSettings) -> PortraitCropParams:
-    return PortraitCropParams(
-        aspect_w=collect.crop_aspect_w,
-        aspect_h=collect.crop_aspect_h,
-        padding=collect.crop_padding,
-    )
-
-
 def _write_cropped_portrait(
     *,
     source_path: Path,
@@ -64,11 +53,29 @@ def _write_cropped_portrait(
     image_cfg: ImagePipelineSettings,
     collect: CollectSettings,
     log: logging.Logger,
+    backend: InsightFaceBackend | None = None,
 ) -> bool:
     """Decode, crop, write JPEG. Returns True on success."""
+    if backend is not None:
+        return write_single_face_portrait(
+            source_path=source_path,
+            dest=dest,
+            bbox=bbox,
+            image_cfg=image_cfg,
+            collect=collect,
+            backend=backend,
+            log=log,
+        )
     try:
+        from faceit_ai.vision.face_crop import PortraitCropParams, crop_bgr_to_portrait, write_portrait_jpeg
+
         loaded = load_image_for_pipeline(source_path, image_cfg)
-        cropped = crop_bgr_to_portrait(loaded.bgr, bbox, _crop_params_from_collect(collect))
+        params = PortraitCropParams(
+            aspect_w=collect.crop_aspect_w,
+            aspect_h=collect.crop_aspect_h,
+            padding=collect.crop_padding,
+        )
+        cropped = crop_bgr_to_portrait(loaded.bgr, bbox, params)
         write_portrait_jpeg(dest, cropped)
         return True
     except (ImageDecodeError, OSError, ValueError, json.JSONDecodeError) as e:
@@ -112,6 +119,7 @@ def collect_asset_for_person(
     overwrite: bool = False,
     session: Session | None = None,
     match_score: float | None = None,
+    backend: InsightFaceBackend | None = None,
 ) -> int:
     """Copy or crop ``source_path`` into ``<people_root>/<person_name>/``.
 
@@ -205,6 +213,7 @@ def collect_asset_for_person(
                 image_cfg=image_cfg,
                 collect=collect,
                 log=log,
+                backend=backend,
             ):
                 action = "copy_cropped"
             else:
@@ -303,6 +312,7 @@ def collect_strong_matches_under_folder(
     audit: logging.Logger | None = None,
     logger: logging.Logger | None = None,
     overwrite: bool = False,
+    backend: InsightFaceBackend | None = None,
 ) -> tuple[int, int, int, list[str]]:
     """Copy or crop assets with match score >= threshold into ``<people_root>/<person>/``.
 
@@ -372,6 +382,7 @@ def collect_strong_matches_under_folder(
                 overwrite=overwrite,
                 session=session,
                 match_score=score,
+                backend=backend,
             )
 
     if warnings:

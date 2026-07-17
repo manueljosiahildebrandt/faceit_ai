@@ -93,6 +93,43 @@ def upsert_collected_photo(
     return row
 
 
+def find_collected_for_asset_person(
+    session: Session,
+    *,
+    asset_id: int,
+    person_id: int,
+) -> list[CollectedPhoto]:
+    return list(
+        session.scalars(
+            select(CollectedPhoto).where(
+                CollectedPhoto.asset_id == int(asset_id),
+                CollectedPhoto.person_id == int(person_id),
+            )
+        ).all()
+    )
+
+
+def remove_collected_crops(
+    session: Session,
+    *,
+    asset_id: int,
+    person_id: int,
+    delete_files: bool = True,
+) -> list[Path]:
+    """Remove people-folder crops linked to ``asset_id`` + ``person_id``."""
+    removed: list[Path] = []
+    for row in find_collected_for_asset_person(session, asset_id=asset_id, person_id=person_id):
+        path = Path(row.collected_path)
+        if delete_files and path.is_file():
+            try:
+                path.unlink()
+                removed.append(path)
+            except OSError:
+                pass
+        delete_collected_photo(session, path)
+    return removed
+
+
 def delete_collected_photo(session: Session, collected_path: Path | str) -> bool:
     """Remove the DB link for a people-folder file. Returns True if a row was deleted."""
     key = folder_claim_key(collected_path)
@@ -142,7 +179,9 @@ def resolve_match_score_for_collected(
 # Re-export for callers that already import claim helpers via this module.
 __all__ = [
     "delete_collected_photo",
+    "find_collected_for_asset_person",
     "lookup_sources_by_collected_paths",
+    "remove_collected_crops",
     "resolve_asset_id_for_source",
     "resolve_match_score_for_collected",
     "resolve_person_id",

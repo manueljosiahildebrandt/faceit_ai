@@ -486,6 +486,69 @@ def test_save_review_face_assignments_set_and_clear(tmp_path: Path) -> None:
         assert face.match_score == 1.0
 
 
+@patch("faceit_ai.services.review_confirm.reprocess_single_asset")
+def test_save_review_unassign_removes_crop_and_reprocesses(
+    mock_reprocess: object, tmp_path: Path
+) -> None:
+    from faceit_ai.services.reprocess_asset import ReprocessAssetResult
+
+    mock_reprocess.return_value = ReprocessAssetResult(
+        asset_id=1,
+        status="ok",
+        reason="all_unknown",
+        metadata_applied=False,
+        flagged_pruned=1,
+    )
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    sf = sessionmaker(engine, expire_on_commit=False)
+    root = tmp_path / "shoot"
+    people = tmp_path / "people"
+    root.mkdir()
+    people.mkdir()
+    kim_dir = people / "Kim"
+    kim_dir.mkdir()
+    crop = kim_dir / "face.jpg"
+    crop.write_bytes(b"crop")
+    settings = _minimal_settings(people)
+    with sf() as s:
+        aid, fid = _seed_review_asset(s, root=root, filename="face.jpg", person_name="Kim")
+        kim = s.scalar(select(Person).where(Person.name == "Kim"))
+        assert kim is not None
+        from faceit_ai.services.collected_photos import upsert_collected_photo
+
+        upsert_collected_photo(
+            s,
+            collected_path=crop,
+            source_path=root / "face.jpg",
+            asset_id=aid,
+            person_id=int(kim.id),
+        )
+        dec = s.scalar(select(AssetDecision).where(AssetDecision.asset_id == aid))
+        assert dec is not None
+        dec.status = "blocked"
+        s.commit()
+
+        backend = object()
+        result = save_review_face_assignments(
+            session=s,
+            asset_id=aid,
+            folder=root,
+            face_assignments=[FaceAssignment(face_id=fid, person_name="")],
+            image_cfg=settings.pipeline.image,
+            status="blocked",
+            settings=settings,
+            people_root=people,
+            backend=backend,  # type: ignore[arg-type]
+            session_factory=sf,
+        )
+        s.commit()
+        assert not crop.exists()
+        assert result.reprocessed is True
+        assert result.new_status == "ok"
+        mock_reprocess.assert_called_once()
+
+
 @patch("faceit_ai.services.review_confirm._write_cropped_portrait", return_value=True)
 def test_save_review_face_assignments_crops_into_person_folder(
     mock_crop: object, tmp_path: Path

@@ -1160,8 +1160,8 @@
     "en": "Inference providers"
   },
   "settings.ai.providers_help": {
-    "de": "ONNX-Runtime-Provider für InsightFace. „auto“ (Standard): CUDA (falls installiert), sonst DirectML unter Windows (DX12-GPU), sonst CPU. CoreML wird übersprungen (nicht kompatibel mit InsightFace SCRFD). Beispiel: auto, DmlExecutionProvider oder CPUExecutionProvider",
-    "en": "ONNX Runtime providers for InsightFace. auto (default): CUDA if installed, else DirectML on Windows (any DX12 GPU), else CPU. CoreML is skipped (incompatible with InsightFace SCRFD). Example: auto, DmlExecutionProvider, or CPUExecutionProvider"
+    "de": "ONNX-Runtime-Provider für InsightFace. „auto“ (Standard): CUDA (falls installiert), sonst CPU. CoreML wird übersprungen (nicht kompatibel mit InsightFace SCRFD). Beispiel: auto oder CPUExecutionProvider",
+    "en": "ONNX Runtime providers for InsightFace. auto (default): CUDA if installed, else CPU. CoreML is skipped (incompatible with InsightFace SCRFD). Example: auto or CPUExecutionProvider"
   },
   "settings.ai.providers_placeholder": {
     "de": "auto",

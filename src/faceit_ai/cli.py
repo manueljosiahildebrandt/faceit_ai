@@ -62,14 +62,14 @@ from faceit_ai.vision.insightface_backend import InsightFaceBackend
 @click.option(
     "--export-flagged",
     type=click.Choice(["off", "copy", "move", "from-config"], case_sensitive=False),
-    default="off",
+    default="copy",
     show_default=True,
     help="Export blocked/review files under <folder>/flagged/{blocked,review}/. "
-    "Default off (no flagged tree). Use copy|move to enable, or from-config for export.flagged in YAML.",
+    "Default copy. Use off|move, or from-config for export.flagged in YAML.",
 )
 @click.option(
     "--sync-metadata/--no-sync-metadata",
-    default=True,
+    default=False,
     show_default=True,
     help="After analyze completes, run metadata sync for selected statuses as batch.",
 )

@@ -179,7 +179,7 @@ class CollectSettings:
     """
 
     people_root: Path | None
-    crop_portrait: bool = False
+    crop_portrait: bool = True
     crop_aspect_w: float = 3.0
     crop_aspect_h: float = 4.0
     crop_padding: float = 1.5
@@ -334,9 +334,9 @@ class Settings:
         )
 
         ex = raw.get("export") or {}
-        flagged_raw = str(ex.get("flagged", "off")).lower()
+        flagged_raw = str(ex.get("flagged", "copy")).lower()
         if flagged_raw not in ("off", "copy", "move"):
-            flagged_raw = "off"
+            flagged_raw = "copy"
         statuses_raw = ex.get("flagged_status", ["blocked", "review"])
         if not isinstance(statuses_raw, list):
             statuses_raw = ["blocked", "review"]
@@ -386,7 +386,7 @@ class Settings:
                 if collect_root_raw
                 else None
             ),
-            crop_portrait=bool(col.get("crop_portrait", False)),
+            crop_portrait=bool(col.get("crop_portrait", True)),
             crop_aspect_w=aspect_w,
             crop_aspect_h=aspect_h if aspect_h > 0 else 4.0,
             crop_padding=float(col.get("crop_padding", 1.5)),
@@ -407,7 +407,7 @@ class Settings:
         else:
             xmp_label_values = {}
         lightroom = LightroomSettings(
-            enable=bool(lr_raw.get("enable", True)),
+            enable=bool(lr_raw.get("enable", False)),
             color_labels=lr_color_labels,
             xmp_label_values=xmp_label_values,
         )

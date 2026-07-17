@@ -36,7 +36,7 @@ class FaceitGui:
         self.usage_var = tk.StringVar(value="social")
         self.force_var = tk.BooleanVar(value=False)
         self.quiet_var = tk.BooleanVar(value=False)
-        self.sync_metadata_var = tk.BooleanVar(value=True)
+        self.sync_metadata_var = tk.BooleanVar(value=False)
         self.status_blocked_var = tk.BooleanVar(value=True)
         self.status_review_var = tk.BooleanVar(value=True)
         self.status_ok_var = tk.BooleanVar(value=False)

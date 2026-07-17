@@ -160,7 +160,7 @@ class AppState:
         # Persist last "Analyze batch" form values so a rerun keeps selections.
         self.export_mode_last = "off"
         self.force_last = False
-        self.sync_metadata_last = True
+        self.sync_metadata_last = False
         self.status = "Idle"
         self.stage = "Waiting"
         self.warnings = 0
@@ -2854,11 +2854,11 @@ def _read_config_form() -> dict[str, object]:
         inference_providers = ", ".join(str(p) for p in providers_raw)
     else:
         inference_providers = str(providers_raw)
-    flagged_raw = str(ex.get("flagged", "off")).lower()
+    flagged_raw = str(ex.get("flagged", "copy")).lower()
     if flagged_raw in ("false", "0", "no", ""):
         flagged_raw = "off"
     if flagged_raw not in ("off", "copy", "move"):
-        flagged_raw = "off"
+        flagged_raw = "copy"
     statuses_raw = ex.get("flagged_status")
     if statuses_raw is None:
         status_set = {"blocked", "review"}
@@ -2866,7 +2866,7 @@ def _read_config_form() -> dict[str, object]:
         status_set = {str(x).lower() for x in statuses_raw}
     else:
         status_set = set()
-    meta_sync = bool(an.get("sync_metadata_default", md.get("enabled", True)))
+    meta_sync = bool(an.get("sync_metadata_default", md.get("enabled", False)))
     ing = cfg.get("ingest") or {}
     return {
         "det_size": det_text,
@@ -2889,7 +2889,7 @@ def _read_config_form() -> dict[str, object]:
         "export_flagged": flagged_raw,
         "export_status_blocked": "blocked" in status_set,
         "export_status_review": "review" in status_set,
-        "collect_crop_portrait": bool(col.get("crop_portrait", False)),
+        "collect_crop_portrait": bool(col.get("crop_portrait", True)),
         "ingest_enabled": bool(ing.get("enabled", False)),
         "ingest_order": (
             "analyze_then_copy"
@@ -6450,7 +6450,7 @@ setInterval(poll, 1000); poll();
             if not flagged_statuses:
                 export_mode = "off"
             force = bool(cfg.get("force_default"))
-            sync_meta = bool(cfg.get("sync_metadata_default", True))
+            sync_meta = bool(cfg.get("sync_metadata_default", False))
             cmd = [
                 _cli_path("analyze_photos"),
                 folder,

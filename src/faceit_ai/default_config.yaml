@@ -65,10 +65,10 @@ decision:
 # Defaults used by the web UI Analyze page (and can be overridden on CLI).
 analyze:
   force_default: false
-  sync_metadata_default: true
+  sync_metadata_default: false
 
 export:
-  flagged: off
+  flagged: copy
   flagged_status:
     - blocked
     - review
@@ -84,8 +84,8 @@ collect:
   # for later manual re-registration.
   # Leave empty to disable (or pass --collect-to on the CLI / via the GUI people-root).
   people_root: ""
-  # Opt-in: save face-centered portrait JPEGs instead of copying full scene files.
-  crop_portrait: false
+  # Save face-centered portrait JPEGs instead of copying full scene files.
+  crop_portrait: true
   crop_aspect: "3:4"
   crop_padding: 1.5
   # A bit above match_threshold_review (200); below match_threshold_strong (295).
@@ -93,7 +93,7 @@ collect:
   output_format: jpg
 
 metadata:
-  enabled: true
+  enabled: false
   # exiftool | xmp_manual (legacy hand-built XMP sidecar XML)
   writer: exiftool
   mode: sidecar_for_raw
@@ -119,7 +119,7 @@ metadata:
   preserve_unrelated_keywords: true
 
 lightroom:
-  enable: true
+  enable: false
   color_labels:
     blocked: red
     review: purple

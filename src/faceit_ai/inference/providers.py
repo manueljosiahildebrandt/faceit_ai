@@ -23,14 +23,38 @@ _GPU_PROVIDERS = frozenset(
     }
 )
 
+_BROKEN_ORT_HINT = (
+    "onnxruntime is installed but broken (missing InferenceSession). "
+    "On Windows, repair with:\n"
+    "  python -m pip uninstall -y onnxruntime onnxruntime-gpu onnxruntime-directml\n"
+    "  python -m pip install \"onnxruntime-directml>=1.17\"\n"
+    "Then restart Faceit AI."
+)
+
+
+class OnnxRuntimeBrokenError(RuntimeError):
+    """Raised when the onnxruntime package imports but is unusable."""
+
+
+def onnxruntime_is_healthy() -> bool:
+    """True if onnxruntime exposes InferenceSession (real wheel, not a broken stub)."""
+    try:
+        import onnxruntime as ort
+
+        return hasattr(ort, "InferenceSession") and callable(ort.get_available_providers)
+    except Exception:
+        return False
+
 
 def available_onnx_providers() -> tuple[str, ...]:
     try:
         import onnxruntime as ort
 
+        if not hasattr(ort, "InferenceSession"):
+            return ()
         return tuple(ort.get_available_providers())
     except Exception:
-        return (_CPU,)
+        return ()
 
 
 def device_kind(providers: tuple[str, ...] | list[str]) -> str:
@@ -51,7 +75,14 @@ def resolve_onnx_providers(requested: tuple[str, ...] | list[str]) -> tuple[str,
     - Explicit names are kept when available; CoreML is dropped with a warning;
       falls back to CPU if nothing usable remains.
     """
+    if not onnxruntime_is_healthy():
+        # Still return CPU so callers can log device; load will fail with a clear error.
+        return (_CPU,)
+
     avail = set(available_onnx_providers())
+    if not avail:
+        return (_CPU,)
+
     req = [str(p).strip() for p in requested if str(p).strip()]
     if not req or req == ["auto"]:
         for name in _PREFERENCE:
@@ -78,3 +109,10 @@ def resolve_onnx_providers(requested: tuple[str, ...] | list[str]) -> tuple[str,
     if kept:
         return tuple(kept)
     return (_CPU,)
+
+
+def require_healthy_onnxruntime() -> None:
+    """Raise ``OnnxRuntimeBrokenError`` with repair steps if ORT is unusable."""
+    if onnxruntime_is_healthy():
+        return
+    raise OnnxRuntimeBrokenError(_BROKEN_ORT_HINT)

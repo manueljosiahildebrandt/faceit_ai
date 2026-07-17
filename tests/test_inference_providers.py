@@ -13,6 +13,7 @@ def test_resolve_onnx_providers_auto_skips_coreml() -> None:
 
 
 def test_resolve_onnx_providers_auto_prefers_dml_over_cpu(monkeypatch) -> None:
+    monkeypatch.setattr(providers_mod, "onnxruntime_is_healthy", lambda: True)
     monkeypatch.setattr(
         providers_mod,
         "available_onnx_providers",
@@ -22,6 +23,7 @@ def test_resolve_onnx_providers_auto_prefers_dml_over_cpu(monkeypatch) -> None:
 
 
 def test_resolve_onnx_providers_auto_prefers_cuda_over_dml(monkeypatch) -> None:
+    monkeypatch.setattr(providers_mod, "onnxruntime_is_healthy", lambda: True)
     monkeypatch.setattr(
         providers_mod,
         "available_onnx_providers",

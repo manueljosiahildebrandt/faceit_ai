@@ -31,11 +31,20 @@ if errorlevel 1 (
 )
 
 REM Windows GPU: onnxruntime-directml (DirectML). Stock onnxruntime is CPU-only and conflicts.
-python -c "import onnxruntime as ort; raise SystemExit(0 if 'DmlExecutionProvider' in ort.get_available_providers() else 1)" >nul 2>&1
+REM Also repair broken/stub installs (import works but InferenceSession is missing).
+python -c "import onnxruntime as ort; ok=hasattr(ort,'InferenceSession') and 'DmlExecutionProvider' in ort.get_available_providers(); raise SystemExit(0 if ok else 1)" >nul 2>&1
 if errorlevel 1 (
-  echo Enabling Windows GPU via DirectML (one-time^)...
-  python -m pip uninstall -y onnxruntime onnxruntime-gpu >nul 2>&1
-  python -m pip install "onnxruntime-directml>=1.17"
+  echo Repairing ONNX Runtime for Windows ^(DirectML^)...
+  python -m pip uninstall -y onnxruntime onnxruntime-gpu onnxruntime-directml
+  python -m pip install --upgrade --force-reinstall "onnxruntime-directml>=1.17"
+  python -c "import onnxruntime as ort; assert hasattr(ort,'InferenceSession'), 'onnxruntime still broken'; print('ONNX Runtime OK:', ort.get_available_providers())"
+  if errorlevel 1 (
+    echo ERROR: onnxruntime-directml install failed. Try manually in this window:
+    echo   python -m pip uninstall -y onnxruntime onnxruntime-gpu onnxruntime-directml
+    echo   python -m pip install --force-reinstall "onnxruntime-directml^>=1.17"
+    pause
+    exit /b 1
+  )
 )
 
 if not exist "config\default.yaml" (

@@ -14,7 +14,7 @@ from typing import Any
 
 import numpy as np
 
-from faceit_ai.inference.providers import device_kind
+from faceit_ai.inference.providers import device_kind, require_healthy_onnxruntime
 from faceit_ai.settings import InsightFaceSettings
 
 
@@ -43,6 +43,7 @@ class InsightFaceBackend:
         return 512
 
     def _build_app(self, providers: list[str]) -> Any:
+        require_healthy_onnxruntime()
         os.environ["INSIGHTFACE_ROOT"] = str(self._root)
         from insightface.app import FaceAnalysis
 

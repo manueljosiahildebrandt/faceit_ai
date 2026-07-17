@@ -1588,10 +1588,18 @@ def _tags_cell_html(
         f'<button type="button" class="tag-pill tag-add" data-person-slug="{slug_attr}" '
         f"onclick='openTagPicker(event, {name_js}, {names_js})'>+</button>"
     )
+    more_btn = (
+        f'<button type="button" class="tag-pill tag-more" '
+        f"onclick='toggleTagsExpand(event, this)'>"
+        f"{html.escape(_t('people.tag.more', lang))}</button>"
+    )
     return (
-        f'<div class="tags-cell">'
+        f'<div class="tags-cell" data-tags-cell="1">'
+        f'<div class="tags-more-row">{more_btn}</div>'
+        f'<div class="tags-main">'
         f'<div class="tags-cell-pills">{"".join(pills)}</div>'
         f"{add_btn}"
+        f"</div>"
         f"</div>"
     )
 
@@ -2710,19 +2718,57 @@ h1 {
 .people-table th.sort-desc::after { content: " ▼"; font-size: 10px; }
 .tags-cell {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
   width: fit-content;
-  max-width: 100%;
+  max-width: 220px;
+}
+.tags-more-row {
+  display: none;
+  justify-content: center;
+  width: 100%;
+}
+.tags-cell.has-overflow .tags-more-row {
+  display: flex;
+}
+.tags-main {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-end;
+  gap: 6px;
+  min-width: 0;
 }
 .tags-cell-pills {
-  display: grid;
-  grid-template-columns: repeat(4, max-content);
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   align-items: center;
-  justify-items: start;
+  justify-content: flex-start;
+  align-content: flex-start;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  /* ~3 rows of tag pills */
+  max-height: 78px;
+  overflow: hidden;
 }
+.tags-cell.has-overflow:not(.is-expanded) .tags-cell-pills {
+  /* Clip oldest tags at the top; keep the latest years visible. */
+  align-content: flex-end;
+}
+.tags-cell.is-expanded .tags-cell-pills {
+  max-height: none;
+  overflow: visible;
+  align-content: flex-start;
+}
+.tag-pill.tag-more {
+  cursor: pointer;
+  color: var(--muted);
+  padding: 2px 10px;
+  font-size: 11px;
+}
+.tag-pill.tag-more:hover { color: var(--text); border-color: var(--accent); }
 .tags-cell .tag-pill.tag-add {
   flex: 0 0 auto;
   width: auto;
@@ -4385,6 +4431,7 @@ document.addEventListener('keydown', function(ev) {{
             people_root = (STATE.people_root_last or _load_people_dir_from_config()).strip()
             people_rows = _list_people_rows()
             table_body = _people_table_body_html(people_rows, lang=lang)
+            all_tags_js = json.dumps(_collect_all_people_tags(people_rows))
             body = f"""<!doctype html>
 <html><head><meta charset="utf-8"><title>{html.escape(_t("app.title.people", lang))}</title>
 {self._base_style()}
@@ -4475,7 +4522,7 @@ function escapeHtml(s) {{
 function escapeHtmlAttr(s) {{
   return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
 }}
-let peopleAllTags = [];
+let peopleAllTags = {all_tags_js};
 let peopleSortKey = 'name';
 let peopleSortDir = 'asc';
 let tagPopoverSlug = '';
@@ -4568,6 +4615,7 @@ function applyPeopleTableSort() {{
   }});
   rows.forEach(function(r) {{ tbody.appendChild(r); }});
   filterPeopleTable();
+  initTagsOverflow();
 }}
 
 function sortPeopleTable(key) {{
@@ -4708,10 +4756,23 @@ function repositionTagPicker() {{
     if (el.getAttribute('data-person-slug') === tagPopoverSlug) btn = el;
   }});
   const pop = document.getElementById('tag_picker');
-  if (!btn || !pop) return;
+  if (!btn || !pop || pop.style.display === 'none') return;
   const rect = btn.getBoundingClientRect();
-  pop.style.left = Math.min(rect.left, window.innerWidth - 440) + 'px';
-  pop.style.top = (rect.bottom + 6) + 'px';
+  const popRect = pop.getBoundingClientRect();
+  const gap = 6;
+  const margin = 8;
+  let top = rect.bottom + gap;
+  if (top + popRect.height > window.innerHeight - margin) {{
+    top = rect.top - popRect.height - gap;
+  }}
+  if (top < margin) top = margin;
+  let left = rect.left;
+  if (left + popRect.width > window.innerWidth - margin) {{
+    left = window.innerWidth - popRect.width - margin;
+  }}
+  if (left < margin) left = margin;
+  pop.style.left = left + 'px';
+  pop.style.top = top + 'px';
 }}
 
 function reopenTagPickerContent() {{
@@ -4720,7 +4781,7 @@ function reopenTagPickerContent() {{
   const available = pickerTagsForPerson(tagPopoverPersonTags);
   pop.innerHTML = renderTagPickerContent(available);
   pop.style.display = 'block';
-  repositionTagPicker();
+  requestAnimationFrame(function() {{ repositionTagPicker(); }});
 }}
 
 function openTagPicker(ev, slug, personTags) {{
@@ -4733,9 +4794,36 @@ function openTagPicker(ev, slug, personTags) {{
   const available = pickerTagsForPerson(tagPopoverPersonTags);
   pop.innerHTML = renderTagPickerContent(available);
   pop.style.display = 'block';
-  const rect = ev.target.getBoundingClientRect();
-  pop.style.left = Math.min(rect.left, window.innerWidth - 440) + 'px';
-  pop.style.top = (rect.bottom + 6) + 'px';
+  // Measure after paint so we can flip above the button near the viewport bottom.
+  requestAnimationFrame(function() {{ repositionTagPicker(); }});
+}}
+
+function initTagsOverflow() {{
+  document.querySelectorAll('.tags-cell[data-tags-cell]').forEach(function(cell) {{
+    const pills = cell.querySelector('.tags-cell-pills');
+    const moreBtn = cell.querySelector('.tag-more');
+    if (!pills) return;
+    const wasExpanded = cell.classList.contains('is-expanded');
+    cell.classList.remove('has-overflow', 'is-expanded');
+    // Force collapsed measure.
+    void pills.offsetHeight;
+    const overflowing = pills.scrollHeight > pills.clientHeight + 1;
+    if (overflowing) cell.classList.add('has-overflow');
+    if (wasExpanded && overflowing) {{
+      cell.classList.add('is-expanded');
+      if (moreBtn) moreBtn.textContent = t('people.tag.less');
+    }} else if (moreBtn) {{
+      moreBtn.textContent = t('people.tag.more');
+    }}
+  }});
+}}
+
+function toggleTagsExpand(ev, btn) {{
+  if (ev) ev.stopPropagation();
+  const cell = btn && btn.closest('.tags-cell');
+  if (!cell) return;
+  const expanded = cell.classList.toggle('is-expanded');
+  btn.textContent = expanded ? t('people.tag.less') : t('people.tag.more');
 }}
 
 function tagNamesFromResponse(d) {{
@@ -4764,6 +4852,7 @@ function showNewTagInput(ev) {{
     if (e.key === 'Enter') {{ e.preventDefault(); confirmNewTagInput(); }}
     if (e.key === 'Escape') {{ e.preventDefault(); closeTagPicker(); }}
   }});
+  requestAnimationFrame(function() {{ repositionTagPicker(); }});
 }}
 
 function resolveTagName(raw) {{
@@ -4852,6 +4941,7 @@ async function refreshPeopleTable(opts) {{
     if (d.ok && d.all_tags) peopleAllTags = d.all_tags;
     filterPeopleTable();
     applyPeopleTableSort();
+    initTagsOverflow();
     if (keepPicker) reopenTagPickerContent();
     const show = !!(d.ok && d.has_mismatch);
     const navWarn = document.getElementById('nav_people_mismatch_warn');
@@ -5302,6 +5392,12 @@ async function stopServer() {{
 }}
 
 (async function() {{
+  initTagsOverflow();
+  window.addEventListener('resize', function() {{
+    initTagsOverflow();
+    repositionTagPicker();
+  }});
+  window.addEventListener('scroll', function() {{ repositionTagPicker(); }}, true);
   try {{
     const r = await fetch('/api/status');
     const d = await r.json();

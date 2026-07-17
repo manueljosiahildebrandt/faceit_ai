@@ -1,6 +1,6 @@
 # Faceit AI
 
-**Version 0.0.3** — Local GDPR-aware face detection, matching, and consent-based photo decisions. No cloud APIs. Day-to-day work happens in the **browser**; you do not need the command line after setup.
+**Version 0.0.4** — Local GDPR-aware face detection, matching, and consent-based photo decisions. No cloud APIs. Day-to-day work happens in the **browser**; you do not need the command line after setup.
 
 ## Requirements
 

@@ -827,6 +827,14 @@
     "de": "Klicken, um den Einwilligungsstatus für {tag} zu ändern.",
     "en": "Click to change consent status for {tag}."
   },
+  "people.tag.less": {
+    "de": "weniger",
+    "en": "less"
+  },
+  "people.tag.more": {
+    "de": "mehr",
+    "en": "more"
+  },
   "people.tag.new_placeholder": {
     "de": "Neuer Tag",
     "en": "New tag"

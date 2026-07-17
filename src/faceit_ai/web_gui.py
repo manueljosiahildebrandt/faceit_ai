@@ -749,10 +749,12 @@ def _finalize_progress_line(line: str, *, success: bool) -> str:
 
 
 def _cli_env() -> dict[str, str]:
-    """Env for CLI subprocesses — unbuffered so Progress polls see tqdm live."""
+    """Env for CLI subprocesses — unbuffered UTF-8 so Progress/logs survive Windows cp1252."""
     env = dict(os.environ)
     env["PYTHONUNBUFFERED"] = "1"
-    env.setdefault("PYTHONIOENCODING", "utf-8")
+    env["PYTHONIOENCODING"] = "utf-8"
+    # Python 3.7+ on Windows: make stdout/stderr UTF-8 instead of the ANSI code page.
+    env["PYTHONUTF8"] = "1"
     return env
 
 
@@ -762,6 +764,8 @@ def _popen_cli(cmd: list[str], *, start_new_session: bool = False) -> subprocess
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         bufsize=1,
         env=_cli_env(),
         start_new_session=start_new_session,

@@ -1,0 +1,138 @@
+# Centralized parameters (auditable). Override: FACEIT_AI_CONFIG=/path/to.yaml
+# Data root: FACEIT_AI_DATA_DIR (default: current working directory)
+
+database:
+  # Leave url empty to use the local SQLite file (single-user / local mode).
+  # For shared multi-PC use, set a full SQLAlchemy URL, e.g.:
+  #   url: postgresql+psycopg://facit:${FACIT_DB_PASSWORD}@synology.local:5432/facit
+  # ${ENV} placeholders are expanded so secrets can stay in environment variables.
+  url: ""
+  sqlite_relative_path: "data/consent.db"
+
+paths:
+  # Folder that holds the local data (SQLite DB when url is empty, logs, etc.).
+  # Precedence: FACEIT_AI_DATA_DIR env > this value > current working directory.
+  data_dir: ""
+  # People gallery root (subfolders = person names). Used by the web UI People page.
+  people_dir: ""
+  insightface_root: ""
+  log_relative_dir: "logs"
+
+logging:
+  level: "INFO"
+  audit_filename: "audit.log"
+
+pipeline:
+  insightface:
+    model_name: "buffalo_l"
+    det_size: [512, 512]
+    providers:
+      - "auto"
+  image:
+    max_dimension: 1800
+    supported_extensions:
+      - ".jpg"
+      - ".jpeg"
+      - ".png"
+      - ".webp"
+    raw_extensions:
+      - ".arw"
+      - ".dng"
+      - ".cr2"
+      - ".cr3"
+      - ".nef"
+      - ".nrw"
+      - ".orf"
+      - ".raf"
+      - ".rw2"
+      - ".pef"
+      - ".srw"
+    raw_decode_size: half
+    ignore_filename_substrings:
+      - "-pano"
+
+matching:
+  match_score_scale: 512
+  match_threshold_strong: 295
+  match_threshold_review: 200
+
+decision:
+  min_confident_match: 0.6
+  # ok = only block known non-consented people; strangers are OK to publish.
+  # review = send every unrecognized face to Review.
+  unknown_face_status: ok
+
+# Defaults used by the web UI Analyze page (and can be overridden on CLI).
+analyze:
+  force_default: false
+  sync_metadata_default: true
+
+export:
+  flagged: off
+  flagged_status:
+    - blocked
+    - review
+
+ingest:
+  enabled: false
+  destination_root: ""
+  order: copy_then_analyze  # or analyze_then_copy
+
+collect:
+  # Optional fallback for analyze_photos --collect-to. When set, matched photos
+  # (score >= match_threshold_collect) are copied into <people_root>/<person_name>/
+  # for later manual re-registration.
+  # Leave empty to disable (or pass --collect-to on the CLI / via the GUI people-root).
+  people_root: ""
+  # Opt-in: save face-centered portrait JPEGs instead of copying full scene files.
+  crop_portrait: false
+  crop_aspect: "3:4"
+  crop_padding: 1.5
+  # A bit above match_threshold_review (200); below match_threshold_strong (295).
+  match_threshold_collect: 240
+  output_format: jpg
+
+metadata:
+  enabled: true
+  # exiftool | xmp_manual (legacy hand-built XMP sidecar XML)
+  writer: exiftool
+  mode: sidecar_for_raw
+  # RAW: embedded = XMP inside the ARW/DNG/…; sidecar = only adjacent .xmp (see docs)
+  exiftool_raw_target: embedded
+  exiftool_preserve_xmpmm_document_id: true
+  exiftool_preserve_xmpmm_instance_id: false
+  exiftool_path: exiftool
+  exiftool_timeout_sec: 120
+  # Extra ExifTool read per file after write; default off (noisy on RAW + Photoshop:LabelColor).
+  exiftool_verify_after_write: false
+  dry_run: false
+  write_keywords: true
+  write_fields: true
+  write_photoshop_label_color: true
+  write_color_label: true
+  overwrite_color_labels: false
+  write_rating: false
+  overwrite_ratings: false
+  xmp_rating_by_status: {}
+  write_for_jpeg: false
+  write_for_tiff: false
+  preserve_unrelated_keywords: true
+
+lightroom:
+  enable: true
+  color_labels:
+    blocked: red
+    review: purple
+    ok: none
+  # Strings written to XMP:Label (must match the Lightroom catalog language).
+  # English default; German catalogs: blocked "Rot", review "Lila", ok "" (override in your YAML).
+  xmp_label_values:
+    blocked: "Red"
+    review: "Purple"
+    ok: ""
+
+usage_map:
+  social: usage_social
+  web: usage_web
+  internal: usage_internal
+  print: usage_print

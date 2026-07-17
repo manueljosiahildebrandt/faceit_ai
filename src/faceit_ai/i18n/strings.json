@@ -1,0 +1,1498 @@
+{
+  "activity.analysis_finished": {
+    "de": "Analyse abgeschlossen: {n} analysiert. Nicht lesbar übersprungen: {d}.",
+    "en": "Analysis finished: {n} analyzed. Unreadable skipped: {d}."
+  },
+  "activity.consent_done": {
+    "de": "Fertig: Einwilligung auf {status} gesetzt, Metadaten angewendet={n}, Fehler={e}.",
+    "en": "Done: consent set to {status}, metadata applied={n}, errors={e}."
+  },
+  "activity.consent_toggle": {
+    "de": "Einwilligung für {name} wird umgeschaltet…",
+    "en": "Toggling consent for {name}…"
+  },
+  "activity.finished": {
+    "de": "Abgeschlossen: {status}",
+    "en": "Finished: {status}"
+  },
+  "activity.found_photos": {
+    "de": "{n} Fotos im Ordner gefunden.",
+    "en": "Found {n} photos in folder."
+  },
+  "activity.metadata_sync": {
+    "de": "Metadatenabgleich abgeschlossen. Aktualisiert: {s}, übersprungen (keine DB-Übereinstimmung / falscher Status): {k}, Fehler: {e}.",
+    "en": "Metadata sync finished. Updated: {s}, skipped (no DB match / wrong status): {k}, errors: {e}."
+  },
+  "activity.preparing_run": {
+    "de": "Analysedurchlauf wird vorbereitet…",
+    "en": "Preparing analysis run..."
+  },
+  "activity.reactivate": {
+    "de": "{name} wird reaktiviert (Embeddings bereits gespeichert)…",
+    "en": "Reactivating {name} (embeddings already stored)…"
+  },
+  "activity.register_fail": {
+    "de": "Registrierung von {name} fehlgeschlagen. Details im technischen Protokoll.",
+    "en": "Failed to register {name}. Check Technical Log for details."
+  },
+  "activity.register_person": {
+    "de": "{name} wird aus dem Ordner registriert…",
+    "en": "Registering {name} from folder…"
+  },
+  "activity.registered": {
+    "de": "{name} registriert.",
+    "en": "Registered {name}."
+  },
+  "activity.registering_folder": {
+    "de": "Personen aus ausgewähltem Ordner werden registriert…",
+    "en": "Registering people from selected folder..."
+  },
+  "activity.reregister_fail": {
+    "de": "Re-Registrierung für {name} fehlgeschlagen.",
+    "en": "Re-register failed for {name}."
+  },
+  "activity.reregister_new": {
+    "de": "{name} wird aus dem Ordner registriert…",
+    "en": "Registering {name} from folder…"
+  },
+  "activity.reregister_ok": {
+    "de": "{name} wurde aus dem Ordner re-registriert.",
+    "en": "Re-registered {name} from their folder."
+  },
+  "activity.reregister_wipe": {
+    "de": "Embeddings für {name} gelöscht; es werden nur die Ordnerfotos gescannt…",
+    "en": "Wiped embeddings for {name}; scanning folder photos only…"
+  },
+  "activity.scan_done": {
+    "de": "Fertig: {ok}/{total} registriert, {e} leer übersprungen[, fehlgeschlagen: …].",
+    "en": "Done: registered {ok}/{total}, skipped empty {e}[, failed: …]."
+  },
+  "activity.scan_empty_list": {
+    "de": "  Leere Ordner benötigen zuerst Fotos: {names}.",
+    "en": "Empty folders need photos first: {names}."
+  },
+  "activity.scan_skip_empty": {
+    "de": "{name} übersprungen: keine unterstützten Bilder im Ordner (Fotos hinzufügen, dann erneut scannen).",
+    "en": "Skipped {name}: no supported images in folder (add photos, then re-scan)."
+  },
+  "activity.scan_summary": {
+    "de": "Hinzuzufügen: {a}, leer (übersprungen): {e}, reaktivieren: {r}, entfernen: {m}, unverändert: {u}.",
+    "en": "To add: {a}, empty (skipped): {e}, reactivate: {r}, remove: {m}, unchanged: {u}."
+  },
+  "activity.soft_remove": {
+    "de": "{name} wird weich entfernt: Abgleich wird gestoppt, Embeddings bleiben erhalten, Fotos werden neu gekennzeichnet…",
+    "en": "Soft-removing {name}: stop matching, keep embeddings, re-label photos…"
+  },
+  "activity.starting": {
+    "de": "Start: {task}",
+    "en": "Starting: {task}"
+  },
+  "activity.stop_requested": {
+    "de": "Stopp angefordert — aktuelle Datei wird abgeschlossen, danach Abschlussverarbeitung (markierte Fotos / Personenordner)…",
+    "en": "Stop requested — finishing current file, then checkout (flagged / people folders)…"
+  },
+  "activity.stopped_checkout_done": {
+    "de": "Vorzeitig gestoppt — Abschlussverarbeitung für bisher verarbeitete Fotos abgeschlossen.",
+    "en": "Stopped early — checkout finished for photos processed so far."
+  },
+  "activity.stopped_early_checkout": {
+    "de": "Vorzeitig gestoppt — Abschlussverarbeitung läuft (Export markierter Fotos / Personensammlung)…",
+    "en": "Stopped early — running checkout (flagged export / people collect)…"
+  },
+  "activity.wipe_done": {
+    "de": "Fertig: Embeddings für {name} gelöscht, Metadaten angewendet={n}.",
+    "en": "Done: wiped embeddings for {name}, metadata applied={n}."
+  },
+  "activity.wipe_start": {
+    "de": "Embeddings für {name} werden gelöscht…",
+    "en": "Wiping embeddings for {name}…"
+  },
+  "analyze.active_runs.empty": {
+    "de": "Aktuell analysiert kein Rechner.",
+    "en": "No machines are analyzing right now."
+  },
+  "analyze.active_runs.title": {
+    "de": "Aktuell laufende Rechner (gemeinsame Datenbank)",
+    "en": "Machines running now (shared database)"
+  },
+  "analyze.activity.legend": {
+    "de": "Aktivitätsverlauf",
+    "en": "Activity Feed"
+  },
+  "analyze.alert.copy_failed": {
+    "de": "Protokoll konnte nicht in die Zwischenablage kopiert werden",
+    "en": "Could not copy log to clipboard"
+  },
+  "analyze.alert.no_dest": {
+    "de": "Bitte ein Archivziel (NAS-Pfad) für diesen Ordner angeben.",
+    "en": "Enter an archive destination (NAS path) for this folder."
+  },
+  "analyze.alert.no_folder": {
+    "de": "Bitte zuerst einen zu analysierenden Ordner auswählen.",
+    "en": "Choose a folder to analyze first."
+  },
+  "analyze.alert.stop_failed": {
+    "de": "Durchlauf konnte nicht gestoppt werden",
+    "en": "Could not stop the run"
+  },
+  "analyze.btn.start": {
+    "de": "Analyse starten",
+    "en": "Start Analysis"
+  },
+  "analyze.btn.stop": {
+    "de": "Analyse stoppen",
+    "en": "Stop Analysis"
+  },
+  "analyze.confirm.stop_run": {
+    "de": "Aktuellen Durchlauf stoppen? Bereits verarbeitete Fotos werden trotzdem übernommen (Export markierter Fotos / Personenordner).",
+    "en": "Stop the current run? Processed photos will still be checked out (flagged export / people folders)."
+  },
+  "analyze.label.destination": {
+    "de": "Ziel",
+    "en": "Destination"
+  },
+  "analyze.label.source": {
+    "de": "Quelle",
+    "en": "Source"
+  },
+  "analyze.legend": {
+    "de": "Fotos analysieren",
+    "en": "Analyze Photos"
+  },
+  "analyze.log.copied": {
+    "de": "Kopiert",
+    "en": "Copied"
+  },
+  "analyze.log.copy": {
+    "de": "Protokoll kopieren",
+    "en": "Copy log"
+  },
+  "analyze.log.legend": {
+    "de": "Technisches Protokoll",
+    "en": "Technical Log"
+  },
+  "analyze.log.show": {
+    "de": "Technische Ausgabe anzeigen",
+    "en": "Show technical output"
+  },
+  "analyze.metric.blocked": {
+    "de": "Gesperrt",
+    "en": "Blocked"
+  },
+  "analyze.metric.files_found": {
+    "de": "Dateien gefunden",
+    "en": "Files found"
+  },
+  "analyze.metric.newly_analyzed": {
+    "de": "Neu analysiert",
+    "en": "Newly analyzed"
+  },
+  "analyze.metric.ok": {
+    "de": "OK",
+    "en": "OK"
+  },
+  "analyze.metric.review": {
+    "de": "Prüfung",
+    "en": "Review"
+  },
+  "analyze.metric.unreadable": {
+    "de": "Nicht lesbar (übersprungen)",
+    "en": "Unreadable skipped"
+  },
+  "analyze.placeholder.destination": {
+    "de": "/pfad/zum/zielordner",
+    "en": "/path/to/destination-folder"
+  },
+  "analyze.placeholder.source": {
+    "de": "/pfad/zum/quellordner",
+    "en": "/path/to/source-folder"
+  },
+  "analyze.progress.title": {
+    "de": "Fortschritt",
+    "en": "Progress"
+  },
+  "analyze.stage.preparing_ellipsis": {
+    "de": "Wird vorbereitet…",
+    "en": "Preparing…"
+  },
+  "analyze.status.legend": {
+    "de": "Aktueller Status",
+    "en": "Current Status"
+  },
+  "api.batch_none": {
+    "de": "Keine Prüfungsfotos im Ordner.",
+    "en": "No review photos in folder."
+  },
+  "api.blocked_ok": {
+    "de": "Als gesperrt markiert; {c} Ausschnitt(e), {e} Embedding(s) hinzugefügt.",
+    "en": "Marked blocked; {c} crop(s), {e} embedding(s) added."
+  },
+  "api.choose_people_folder": {
+    "de": "Bitte zuerst einen Personenordner auswählen.",
+    "en": "Please choose a people folder first."
+  },
+  "api.consent_msg": {
+    "de": "Einwilligung für {name} wird aktualisiert…",
+    "en": "Updating consent for {name}…"
+  },
+  "api.create_exists": {
+    "de": "Ein Personenordner existiert bereits: {path}",
+    "en": "A person folder already exists: {path}"
+  },
+  "api.create_need_names": {
+    "de": "Vorname und Nachname sind erforderlich.",
+    "en": "Vorname and Nachname are required."
+  },
+  "api.create_ok": {
+    "de": "{display} als Ordner {slug} erstellt ({n} Foto(s) gespeichert). „Re-registrieren\" ausführen, um Gesichter zu erfassen.",
+    "en": "Created {display} as folder {slug} ({n} photo(s) saved). Run Re-register to index faces."
+  },
+  "api.expected_multipart": {
+    "de": "Multipart-Formulardaten erwartet.",
+    "en": "Expected multipart form data."
+  },
+  "api.gallery_deleted": {
+    "de": "{file} von {name} gelöscht.",
+    "en": "Deleted {file} from {name}."
+  },
+  "api.invalid_asset": {
+    "de": "Ungültige Asset-ID.",
+    "en": "Invalid asset id."
+  },
+  "api.invalid_consent": {
+    "de": "Ungültige Einwilligungsanfrage.",
+    "en": "Invalid consent request."
+  },
+  "api.invalid_faces": {
+    "de": "Ungültige Gesichtszuordnungen.",
+    "en": "Invalid face assignments."
+  },
+  "api.invalid_folder": {
+    "de": "Ungültiger oder fehlender Ordner.",
+    "en": "Invalid or missing folder."
+  },
+  "api.invalid_people_folder": {
+    "de": "Ungültiger Personenordner: {path}",
+    "en": "Invalid people folder: {path}"
+  },
+  "api.invalid_people_folder_short": {
+    "de": "Ungültiger Personenordner.",
+    "en": "Invalid people folder."
+  },
+  "api.invalid_person_name": {
+    "de": "Ungültiger Personenname „{name}\".",
+    "en": "Invalid person name '{name}'."
+  },
+  "api.job_running": {
+    "de": "Ein Vorgang läuft bereits. Bitte auf dessen Abschluss warten.",
+    "en": "A job is already running. Please wait for it to finish."
+  },
+  "api.missing_person": {
+    "de": "Personenname fehlt.",
+    "en": "Missing person name."
+  },
+  "api.moved_ok": {
+    "de": "Nach OK verschoben.",
+    "en": "Moved to OK."
+  },
+  "api.moved_ok_unknown": {
+    "de": "Nach OK verschoben (unbekannte Gesichter akzeptiert).",
+    "en": "Moved to OK (unknown faces accepted)."
+  },
+  "api.no_folder_for_person": {
+    "de": "Kein Ordner für „{name}\" im Personen-Stammordner.",
+    "en": "No folder for '{name}' under the people root."
+  },
+  "api.no_run": {
+    "de": "Kein Durchlauf aktiv.",
+    "en": "No run in progress."
+  },
+  "api.people_not_configured": {
+    "de": "Personenordner ist nicht konfiguriert.",
+    "en": "People folder is not configured."
+  },
+  "api.person_folder_missing": {
+    "de": "Personenordner nicht gefunden: {slug}",
+    "en": "Person folder not found: {slug}"
+  },
+  "api.person_no_images": {
+    "de": "{name}: Ordner enthält keine unterstützten Bilder. Fotos hinzufügen und erneut versuchen.",
+    "en": "{name}: folder has no supported images. Add photos, then try again."
+  },
+  "api.photo_not_found": {
+    "de": "Foto nicht gefunden.",
+    "en": "Photo not found."
+  },
+  "api.picker_cancelled": {
+    "de": "Finder-Auswahl abgebrochen oder fehlgeschlagen ({code}).",
+    "en": "Finder picker cancelled or failed ({code})."
+  },
+  "api.reregister_msg": {
+    "de": "{name} wird re-registriert (Embeddings löschen + Ordner erneut scannen)…",
+    "en": "Re-registering {name} (wipe + rescan their folder)…"
+  },
+  "api.scan_empty_error": {
+    "de": "{summary} JPEG/PNG/RAW-Fotos in jeden Personenordner legen, dann erneut scannen.",
+    "en": "{summary} Put JPEG/PNG/RAW photos inside each person folder, then scan again."
+  },
+  "api.scan_matches": {
+    "de": "{summary} Übersicht stimmt mit dem Ordner überein.",
+    "en": "{summary} Overview matches the folder."
+  },
+  "api.scan_syncing": {
+    "de": "{summary} Wird abgeglichen…",
+    "en": "{summary} Syncing…"
+  },
+  "api.settings_saved": {
+    "de": "Einstellungen gespeichert unter {path}",
+    "en": "Saved settings to {path}"
+  },
+  "api.shutdown": {
+    "de": "Server wird heruntergefahren…",
+    "en": "Shutting down server..."
+  },
+  "api.tags_updated": {
+    "de": "Tags aktualisiert.",
+    "en": "Tags updated."
+  },
+  "api.update_ok": {
+    "de": "{display} aktualisiert.",
+    "en": "Updated {display}."
+  },
+  "api.wipe_msg": {
+    "de": "Embeddings für {name} werden gelöscht…",
+    "en": "Wiping embeddings for {name}…"
+  },
+  "app.heading": {
+    "de": "faceit_ai Web-Oberfläche",
+    "en": "faceit_ai web UI"
+  },
+  "app.title.analyze": {
+    "de": "faceit_ai Web-Oberfläche - Analysieren",
+    "en": "faceit_ai web UI - Analyze"
+  },
+  "app.title.people": {
+    "de": "faceit_ai Web-Oberfläche - Personen",
+    "en": "faceit_ai web UI - People"
+  },
+  "app.title.review": {
+    "de": "faceit_ai Web-Oberfläche - Prüfung",
+    "en": "faceit_ai web UI - Review"
+  },
+  "app.title.settings": {
+    "de": "faceit_ai Web-Oberfläche - Einstellungen",
+    "en": "faceit_ai web UI - Settings"
+  },
+  "app.version_label": {
+    "de": "Version: {version}",
+    "en": "Version: {version}"
+  },
+  "app.version_tip": {
+    "de": "Paketversion aus pyproject.toml",
+    "en": "Package version from pyproject.toml"
+  },
+  "common.alert.picker_failed": {
+    "de": "Finder-Ordnerauswahl konnte nicht geöffnet werden",
+    "en": "Could not open Finder folder picker"
+  },
+  "common.bad_request": {
+    "de": "Ungültige Anfrage",
+    "en": "Bad Request"
+  },
+  "common.choose_finder": {
+    "de": "Im Finder auswählen",
+    "en": "Choose in Finder"
+  },
+  "common.clear": {
+    "de": "Leeren",
+    "en": "Clear"
+  },
+  "common.close": {
+    "de": "Schließen",
+    "en": "Close"
+  },
+  "common.confirm.stop_server": {
+    "de": "faceit_ai-Webserver stoppen?",
+    "en": "Stop faceit_ai web UI server?"
+  },
+  "common.done": {
+    "de": "Fertig.",
+    "en": "Done."
+  },
+  "common.failed": {
+    "de": "Fehlgeschlagen.",
+    "en": "Failed."
+  },
+  "common.not_found": {
+    "de": "Nicht gefunden",
+    "en": "Not Found"
+  },
+  "common.preview_alt": {
+    "de": "Vorschau",
+    "en": "preview"
+  },
+  "common.request_failed": {
+    "de": "Anfrage fehlgeschlagen.",
+    "en": "Request failed."
+  },
+  "common.shutdown.close_tab": {
+    "de": "Sie können diesen Tab schließen.",
+    "en": "You can close this tab."
+  },
+  "common.shutdown.close_tab_restart": {
+    "de": "Sie können diesen Tab schließen. Zum erneuten Start faceit_ai_web im Terminal ausführen.",
+    "en": "You can close this tab. To start again, run faceit_ai_web in terminal."
+  },
+  "common.shutdown.fallback_msg": {
+    "de": "Server wird gestoppt…",
+    "en": "Server stopping..."
+  },
+  "common.shutdown.title": {
+    "de": "Server gestoppt",
+    "en": "Server stopped"
+  },
+  "db.label.server": {
+    "de": "Server: {masked_url}",
+    "en": "Server: {masked_url}"
+  },
+  "db.label.sqlite": {
+    "de": "SQLite (lokale Datei): {path}",
+    "en": "SQLite (local file): {path}"
+  },
+  "db.label.unknown": {
+    "de": "unbekannt",
+    "en": "unknown"
+  },
+  "nav.analyze": {
+    "de": "Analysieren",
+    "en": "Analyze"
+  },
+  "nav.badge.idle": {
+    "de": "Bereit",
+    "en": "Idle"
+  },
+  "nav.lang_aria": {
+    "de": "Sprache",
+    "en": "Language"
+  },
+  "nav.lang_de": {
+    "de": "DE",
+    "en": "DE"
+  },
+  "nav.lang_de_title": {
+    "de": "Deutsch",
+    "en": "Deutsch"
+  },
+  "nav.lang_en": {
+    "de": "EN",
+    "en": "EN"
+  },
+  "nav.lang_en_title": {
+    "de": "English",
+    "en": "English"
+  },
+  "nav.people": {
+    "de": "Personen",
+    "en": "People"
+  },
+  "nav.people_mismatch_tip": {
+    "de": "Bei einigen Personen stimmen Fotos und Embeddings nicht überein — Re-Registrierung verwenden.",
+    "en": "Some people have photos ≠ embeddings — use Re-register."
+  },
+  "nav.review": {
+    "de": "Prüfung",
+    "en": "Review"
+  },
+  "nav.settings": {
+    "de": "Einstellungen",
+    "en": "Settings"
+  },
+  "nav.stop_server": {
+    "de": "faceit_ai stoppen",
+    "en": "Stop faceit_ai"
+  },
+  "osascript.pick_folder": {
+    "de": "Ordner für faceit_ai Web-Oberfläche auswählen",
+    "en": "Select folder for faceit_ai web UI"
+  },
+  "people.alert.tag_failed": {
+    "de": "Tag-Aktualisierung fehlgeschlagen.",
+    "en": "Tag update failed."
+  },
+  "people.btn.add": {
+    "de": "Person hinzufügen…",
+    "en": "Add person…"
+  },
+  "people.btn.create": {
+    "de": "Person erstellen",
+    "en": "Create person"
+  },
+  "people.btn.save": {
+    "de": "Änderungen speichern",
+    "en": "Save changes"
+  },
+  "people.btn.scan": {
+    "de": "Personenordner scannen",
+    "en": "Scan People Folder"
+  },
+  "people.col.consent": {
+    "de": "Einwilligung",
+    "en": "Consent"
+  },
+  "people.col.faces": {
+    "de": "Erfasste Gesichter",
+    "en": "Faces indexed"
+  },
+  "people.col.faces_help": {
+    "de": "Wie viele Fotos dieser Person zu einem erkennbaren Gesichtsprofil verarbeitet wurden.",
+    "en": "How many of this person's photos have been processed into a recognizable face profile."
+  },
+  "people.col.name": {
+    "de": "Name",
+    "en": "Name"
+  },
+  "people.col.photos": {
+    "de": "Fotos",
+    "en": "Photos"
+  },
+  "people.col.tags": {
+    "de": "Tags",
+    "en": "Tags"
+  },
+  "people.confirm.reregister": {
+    "de": "Embeddings für „{name}\" löschen und nur die Fotos in ihrem Ordner neu scannen? Andere Personen bleiben unverändert.",
+    "en": "Wipe embeddings for \"{name}\" and re-scan only their folder photos? Other people are unchanged."
+  },
+  "people.confirm.wipe_long": {
+    "de": "Embeddings für „{name}\" löschen? Dadurch werden die Gesichts-Embeddings dauerhaft gelöscht (Fotos auf der Festplatte bleiben erhalten). Die Person wird deaktiviert und betroffene Fotos werden neu gekennzeichnet. Für ein weiches Entfernen den Ordnerabgleich bevorzugen, falls die Person nächstes Jahr eventuell wieder benötigt wird.",
+    "en": "Wipe embeddings for \"{name}\"? This permanently deletes face embeddings (photos on disk are kept). Person is deactivated and affected photos are re-labeled. Prefer folder sync for soft-remove if you may need them next year."
+  },
+  "people.confirm.wipe_short": {
+    "de": "Alle Gesichtsdaten für „{name}\" löschen? Dies kann nicht rückgängig gemacht werden.",
+    "en": "Wipe all face data for \"{name}\"? This cannot be undone."
+  },
+  "people.consent.allowed": {
+    "de": "Erlaubt",
+    "en": "Allowed"
+  },
+  "people.consent.blocked": {
+    "de": "Gesperrt",
+    "en": "Blocked"
+  },
+  "people.consent.click_to_allow": {
+    "de": "Klicken zum Erlauben",
+    "en": "Click to allow"
+  },
+  "people.consent.click_to_block": {
+    "de": "Klicken zum Sperren",
+    "en": "Click to block"
+  },
+  "people.dash": {
+    "de": "—",
+    "en": "—"
+  },
+  "people.empty.no_folder": {
+    "de": "Oben einen Personenordner auswählen. Die Übersicht zeigt nur Namen, die als Unterordner in diesem Ordner vorhanden sind.",
+    "en": "Choose a people folder above. The overview shows only names that exist as subfolders in that folder."
+  },
+  "people.empty.no_subfolders": {
+    "de": "Keine Personen-Unterordner in diesem Ordner gefunden.",
+    "en": "No person subfolders found in this folder."
+  },
+  "people.folder.legend": {
+    "de": "Personenordner",
+    "en": "People Folder"
+  },
+  "people.folder.placeholder": {
+    "de": "/pfad/zum/personen-stammordner",
+    "en": "/path/to/people/root"
+  },
+  "people.gallery.confirm_delete": {
+    "de": "„{label}\" aus Ordner „{person}\" löschen? Dies entfernt nur die Datei auf der Festplatte.",
+    "en": "Delete \"{label}\" from folder \"{person}\"? This only removes the file on disk."
+  },
+  "people.gallery.count_hint": {
+    "de": "{n} Foto(s) — Miniaturbild anklicken oder ← → Pfeiltasten verwenden",
+    "en": "{n} photo(s) — click a thumbnail or use ← → arrow keys"
+  },
+  "people.gallery.delete": {
+    "de": "Bild löschen",
+    "en": "Delete picture"
+  },
+  "people.gallery.delete_failed": {
+    "de": "Löschen fehlgeschlagen.",
+    "en": "Delete failed."
+  },
+  "people.gallery.deleted": {
+    "de": "Gelöscht.",
+    "en": "Deleted."
+  },
+  "people.gallery.empty": {
+    "de": "Keine im Browser anzeigbaren Fotos (JPEG/PNG/WebP) in diesem Ordner.",
+    "en": "No browser-viewable photos (JPEG/PNG/WebP) in this folder."
+  },
+  "people.gallery.failed": {
+    "de": "Fehlgeschlagen: {e}",
+    "en": "Failed: {e}"
+  },
+  "people.gallery.load_failed": {
+    "de": "Fotos konnten nicht geladen werden.",
+    "en": "Could not load photos."
+  },
+  "people.gallery.loading": {
+    "de": "Fotos werden geladen…",
+    "en": "Loading photos…"
+  },
+  "people.gallery.next": {
+    "de": "Weiter →",
+    "en": "Next →"
+  },
+  "people.gallery.prev": {
+    "de": "← Zurück",
+    "en": "← Previous"
+  },
+  "people.gallery.title": {
+    "de": "Fotos",
+    "en": "Photos"
+  },
+  "people.label.consent": {
+    "de": "Einwilligung",
+    "en": "Consent"
+  },
+  "people.label.display_name": {
+    "de": "Anzeigename (optional)",
+    "en": "Display name (optional)"
+  },
+  "people.label.nachname": {
+    "de": "Nachname",
+    "en": "Nachname"
+  },
+  "people.label.photos": {
+    "de": "Fotos",
+    "en": "Photos"
+  },
+  "people.label.vorname": {
+    "de": "Vorname",
+    "en": "Vorname"
+  },
+  "people.list.title": {
+    "de": "Personen in diesem Ordner",
+    "en": "People in this folder"
+  },
+  "people.menu.actions_aria": {
+    "de": "Aktionen für {display}",
+    "en": "Actions for {display}"
+  },
+  "people.menu.edit": {
+    "de": "Person bearbeiten…",
+    "en": "Edit person…"
+  },
+  "people.menu.register": {
+    "de": "Registrieren",
+    "en": "Register"
+  },
+  "people.menu.reregister": {
+    "de": "Re-registrieren",
+    "en": "Re-register"
+  },
+  "people.menu.wipe": {
+    "de": "Embeddings löschen",
+    "en": "Wipe embeddings"
+  },
+  "people.mismatch.aria": {
+    "de": "Re-Registrierung erforderlich",
+    "en": "Needs re-register"
+  },
+  "people.mismatch.tip": {
+    "de": "{n} Fotos, {m} Embeddings — Re-Registrierung erforderlich.",
+    "en": "{n} photos, {m} embeddings — re-register needed."
+  },
+  "people.modal.add_title": {
+    "de": "Person hinzufügen",
+    "en": "Add person"
+  },
+  "people.modal.edit_title": {
+    "de": "Person bearbeiten",
+    "en": "Edit person"
+  },
+  "people.msg.creating": {
+    "de": "Person wird erstellt…",
+    "en": "Creating person…"
+  },
+  "people.msg.delete_failed": {
+    "de": "Löschen fehlgeschlagen.",
+    "en": "Delete failed."
+  },
+  "people.msg.finished_refresh": {
+    "de": "Fertig. Liste wird aktualisiert…",
+    "en": "Finished. Refreshing list…"
+  },
+  "people.msg.request_failed": {
+    "de": "Anfrage fehlgeschlagen: {e}",
+    "en": "Request failed: {e}"
+  },
+  "people.msg.reregister_failed": {
+    "de": "Re-Registrierung fehlgeschlagen.",
+    "en": "Re-register failed."
+  },
+  "people.msg.reregistering": {
+    "de": "{name} wird re-registriert…",
+    "en": "Re-registering {name}…"
+  },
+  "people.msg.saving": {
+    "de": "Person wird gespeichert…",
+    "en": "Saving person…"
+  },
+  "people.msg.scan_failed": {
+    "de": "Scan fehlgeschlagen.",
+    "en": "Scan failed."
+  },
+  "people.msg.scanning": {
+    "de": "Personenordner wird gescannt…",
+    "en": "Scanning people folder..."
+  },
+  "people.msg.update_failed": {
+    "de": "Aktualisierung fehlgeschlagen.",
+    "en": "Update failed."
+  },
+  "people.msg.updating_consent": {
+    "de": "Einwilligung wird aktualisiert…",
+    "en": "Updating consent…"
+  },
+  "people.msg.wiping": {
+    "de": "Embeddings werden gelöscht…",
+    "en": "Wiping embeddings…"
+  },
+  "people.placeholder.display_name": {
+    "de": "Automatisch aus Vorname + Nachname",
+    "en": "Auto from Vorname + Nachname"
+  },
+  "people.scan.hint": {
+    "de": "Der Scan fügt fehlende Namen hinzu, entfernt Namen, die nicht mehr im Ordner vorhanden sind, weich (Embeddings bleiben für später erhalten), und lässt Übereinstimmungen unverändert. Weiches Entfernen stoppt den Abgleich, damit Fotos veröffentlicht werden können. „Embeddings löschen\" nur für eine endgültige Bereinigung verwenden.",
+    "en": "Scan adds missing names, soft-removes names no longer in the folder (keeps embeddings for later), and leaves matches unchanged. Soft-remove stops matching so photos can be published. Use Wipe embeddings only for a hard clear."
+  },
+  "people.search.empty": {
+    "de": "Keine Personen entsprechen der Suche.",
+    "en": "No people match your search."
+  },
+  "people.search.placeholder": {
+    "de": "Personen suchen…",
+    "en": "Search people…"
+  },
+  "people.slug.prefix": {
+    "de": "Ordner:",
+    "en": "Folder:"
+  },
+  "people.status.needs_scan": {
+    "de": "Scan erforderlich (Embeddings bleiben erhalten)",
+    "en": "Needs scan (embeddings kept)"
+  },
+  "people.status.no_photos": {
+    "de": "Keine Fotos im Ordner",
+    "en": "No photos in folder"
+  },
+  "people.status.not_registered": {
+    "de": "Nicht registriert",
+    "en": "Not registered"
+  },
+  "people.status.registered": {
+    "de": "Registriert",
+    "en": "Registered"
+  },
+  "people.tag.add_title": {
+    "de": "Hinzufügen",
+    "en": "Add"
+  },
+  "people.tag.consent_tip": {
+    "de": "Klicken, um den Einwilligungsstatus für {tag} zu ändern.",
+    "en": "Click to change consent status for {tag}."
+  },
+  "people.tag.new_placeholder": {
+    "de": "Neuer Tag",
+    "en": "New tag"
+  },
+  "people.tag.picker_empty": {
+    "de": "Keine vorhandenen Tags mehr —",
+    "en": "No existing tags left —"
+  },
+  "people.tag.remove_aria": {
+    "de": "Tag entfernen",
+    "en": "Remove tag"
+  },
+  "progress.failed": {
+    "de": "Fehlgeschlagen.",
+    "en": "Failed."
+  },
+  "progress.finished": {
+    "de": "Abgeschlossen.",
+    "en": "Finished."
+  },
+  "progress.stopped": {
+    "de": "Gestoppt.",
+    "en": "Stopped."
+  },
+  "review.alert.assign_required": {
+    "de": "Mindestens ein Gesicht einer bekannten Person zuweisen (nicht Unbekannt).",
+    "en": "Assign at least one face to a known person (not Unknown)."
+  },
+  "review.alert.batch_failed": {
+    "de": "Stapelverschiebung fehlgeschlagen.",
+    "en": "Batch move failed."
+  },
+  "review.alert.confirm_blocked_failed": {
+    "de": "Prüfungsfoto konnte nicht bestätigt werden.",
+    "en": "Could not confirm review photo."
+  },
+  "review.alert.errors_prefix": {
+    "de": "Fehler:",
+    "en": "Errors:"
+  },
+  "review.alert.move_ok_failed": {
+    "de": "Foto konnte nicht nach OK verschoben werden.",
+    "en": "Could not move photo to OK."
+  },
+  "review.alert.skipped_prefix": {
+    "de": "Übersprungen:",
+    "en": "Skipped:"
+  },
+  "review.batch.hint": {
+    "de": "Verschiebt alle verbleibenden Prüfungsfotos anhand erkannter Personennamen; Fotos mit ausschließlich unbekannten Gesichtern werden übersprungen.",
+    "en": "Moves all remaining Review photos using detected person names; unknown-only photos are skipped."
+  },
+  "review.btn.batch_blocked": {
+    "de": "Alle nach Gesperrt verschieben",
+    "en": "Batch move to Blocked"
+  },
+  "review.btn.load": {
+    "de": "Fotos laden",
+    "en": "Load photos"
+  },
+  "review.btn.move_blocked": {
+    "de": "Nach Gesperrt verschieben",
+    "en": "Move to blocked"
+  },
+  "review.btn.move_ok": {
+    "de": "Nach OK verschieben",
+    "en": "Move to OK"
+  },
+  "review.btn.move_ok_unknown": {
+    "de": "Nach OK verschieben (unbekannt OK)",
+    "en": "Move to OK (unknown OK)"
+  },
+  "review.confirm.batch": {
+    "de": "Alle {n} Prüfungsfoto(s) mit erkannten Personennamen nach Gesperrt verschieben?\n\nFotos mit ausschließlich unbekannten Gesichtern werden übersprungen.",
+    "en": "Move all {n} review photo(s) with detected person names to Blocked?\n\nPhotos with only unknown faces are skipped."
+  },
+  "review.confirm.blocked": {
+    "de": "Nach Gesperrt verschieben und Referenzausschnitte hinzufügen für:\n{summary}",
+    "en": "Move to blocked and add reference crops for:\n{summary}"
+  },
+  "review.confirm.ok_from_blocked": {
+    "de": "Dieses Foto nach OK verschieben? (hebt den gesperrten Status auf; markierte Kopien auf der Festplatte bleiben unverändert)",
+    "en": "Move this photo to OK? (clears blocked status; flagged copies on disk are left as-is)"
+  },
+  "review.confirm.ok_from_review": {
+    "de": "Dieses Foto nach OK verschieben? Unbekannte/fremde Gesichter werden zur Veröffentlichung freigegeben.",
+    "en": "Move this photo to OK? Unknown/stranger faces will be accepted for publishing."
+  },
+  "review.empty.choose": {
+    "de": "Ordner auswählen und Fotos laden.",
+    "en": "Choose a folder and load photos."
+  },
+  "review.empty.none": {
+    "de": "Keine {kind} Fotos für diesen Ordner.",
+    "en": "No {kind} photos for this folder."
+  },
+  "review.face.detected": {
+    "de": "Erkannt: {name}",
+    "en": "Detected: {name}"
+  },
+  "review.face.heading": {
+    "de": "Gesicht #{id}",
+    "en": "Face #{id}"
+  },
+  "review.face.score": {
+    "de": "  Score {n}",
+    "en": "score {n}"
+  },
+  "review.face.unknown": {
+    "de": "Unbekannt",
+    "en": "Unknown"
+  },
+  "review.face.unknown_face": {
+    "de": "Unbekanntes Gesicht",
+    "en": "Unknown face"
+  },
+  "review.folder.legend": {
+    "de": "Ordner",
+    "en": "Folder"
+  },
+  "review.folder.placeholder": {
+    "de": "/pfad/zum/shooting-ordner",
+    "en": "/path/to/shoot/folder"
+  },
+  "review.gallery.legend": {
+    "de": "Fotos",
+    "en": "Photos"
+  },
+  "review.gallery.legend_dynamic": {
+    "de": "{kind} Fotos",
+    "en": "{kind} photos"
+  },
+  "review.meta.batch_failed": {
+    "de": "Stapelverarbeitung fehlgeschlagen.",
+    "en": "Batch failed."
+  },
+  "review.meta.batch_processing": {
+    "de": "Stapelverarbeitung…",
+    "en": "Batch processing…"
+  },
+  "review.meta.choose_folder": {
+    "de": "Bitte zuerst einen Ordner auswählen.",
+    "en": "Choose a folder first."
+  },
+  "review.meta.count": {
+    "de": "{n} {kind} Foto(s) im Ordner.",
+    "en": "{n} {kind} photo(s) in folder."
+  },
+  "review.meta.load_failed": {
+    "de": "{label}-Fotos konnten nicht geladen werden.",
+    "en": "Could not load {label} photos."
+  },
+  "review.meta.loading": {
+    "de": "Wird geladen…",
+    "en": "Loading…"
+  },
+  "review.meta.missing_disk": {
+    "de": "  – fehlt auf der Festplatte",
+    "en": "— missing on disk"
+  },
+  "review.meta.photo_failed": {
+    "de": "Foto konnte nicht geladen werden.",
+    "en": "Could not load photo."
+  },
+  "review.meta.processing": {
+    "de": "Wird verarbeitet…",
+    "en": "Processing…"
+  },
+  "review.modal.title": {
+    "de": "Foto",
+    "en": "Photo"
+  },
+  "review.modal.title_fallback": {
+    "de": "{kind} Foto",
+    "en": "{kind} photo"
+  },
+  "review.nav.next": {
+    "de": "Weiter →",
+    "en": "Next →"
+  },
+  "review.nav.prev": {
+    "de": "← Zurück",
+    "en": "← Previous"
+  },
+  "review.person.unknown_option": {
+    "de": "— Unbekannte Person —",
+    "en": "— Unknown person —"
+  },
+  "review.tab.blocked": {
+    "de": "Gesperrt",
+    "en": "Blocked"
+  },
+  "review.tab.review": {
+    "de": "Prüfung",
+    "en": "Review"
+  },
+  "review.thumb.missing": {
+    "de": "  (fehlt)",
+    "en": "(missing)"
+  },
+  "settings.advanced": {
+    "de": "Erweitert",
+    "en": "Advanced"
+  },
+  "settings.ai.config_preview": {
+    "de": "Konfigurationsvorschau",
+    "en": "Config preview"
+  },
+  "settings.ai.debug": {
+    "de": "Debug-Protokollierung",
+    "en": "Debug logging"
+  },
+  "settings.ai.det_size": {
+    "de": "Auflösung der Gesichtserkennung",
+    "en": "Face detection resolution"
+  },
+  "settings.ai.det_size_help": {
+    "de": "Eingabegröße des Detektors (Breite,Höhe).\n\nBeispiele:\n640,640 = höhere Qualität, langsamer\n512,512 = ausgewogener Standard\n400,400 = schneller, kann kleine/entfernte Gesichter übersehen\n\nSchwache CPU: 400-512 ausprobieren\nStarke CPU/GPU: 512-640 ist meist am besten.",
+    "en": "Detector input size (width,height).\n\nExamples:\n640,640 = higher quality, slower\n512,512 = balanced default\n400,400 = faster, may miss small/distant faces\n\nLow-end CPU: try 400-512\nHigh-end CPU/GPU: 512-640 is usually best."
+  },
+  "settings.ai.max_dimension": {
+    "de": "Maximale Bildgröße",
+    "en": "Maximum image size"
+  },
+  "settings.ai.max_dimension_help": {
+    "de": "Längste für die Analyse verwendete Bildseite.\n\nBeispiele:\n2200 = mehr Detail, langsamer\n1800 = ausgewogener Standard\n1400 = schneller, weniger Detail bei entfernten Gesichtern\n\nWenn Geschwindigkeit Priorität hat: 1400-1800 ausprobieren\nWenn die Genauigkeit bei kleinen Gesichtern wichtig ist: 1800-2200 ausprobieren.",
+    "en": "Largest image side used for analysis.\n\nExamples:\n2200 = more detail, slower\n1800 = balanced default\n1400 = faster, less detail for distant faces\n\nIf speed is priority: try 1400-1800\nIf small-face accuracy matters: try 1800-2200."
+  },
+  "settings.ai.providers": {
+    "de": "Inferenz-Provider",
+    "en": "Inference providers"
+  },
+  "settings.ai.providers_help": {
+    "de": "ONNX-Runtime-Provider für InsightFace. „auto\" (Standard) verwendet CUDA, sofern verfügbar, sonst CPU. CoreML wird übersprungen (nicht kompatibel mit InsightFace SCRFD). Beispiel: auto oder CPUExecutionProvider",
+    "en": "ONNX Runtime providers for InsightFace. Use auto (default) for CUDA when available, else CPU. CoreML is skipped (incompatible with InsightFace SCRFD). Example: auto or CPUExecutionProvider"
+  },
+  "settings.ai.providers_placeholder": {
+    "de": "auto",
+    "en": "auto"
+  },
+  "settings.ai.raw_half": {
+    "de": "Schnellere RAW-Verarbeitung",
+    "en": "Faster RAW processing"
+  },
+  "settings.ai.raw_half_help": {
+    "de": "EIN = RAW-Dekodierung in halber Größe (schneller). AUS = vollständige RAW-Dekodierung (mehr Detail, langsamer).",
+    "en": "ON = half-size RAW decode (faster). OFF = full RAW decode (more detail, slower)."
+  },
+  "settings.ai.intro_pipeline": {
+    "de": "Ablauf pro Foto: laden → RAW-Dekodierung (nur bei Kamera-RAW) → auf maximale Bildgröße skalieren → Gesichtserkennung mit der Detektor-Auflösung. Inferenz-Provider steuern CPU/GPU; „auto“ reicht normalerweise.",
+    "en": "Per photo: load → RAW decode (camera RAW only) → scale to Max image size → face detection at Face detection resolution. Inference providers pick CPU/GPU; auto is fine for most setups."
+  },
+  "settings.ai.intro_together": {
+    "de": "Die Einstellungen wirken nacheinander: kleinere RAW-Stufe und niedrigere Maximalgröße = weniger Pixel vor der Erkennung; Detektor-Auflösung = wie gründlich gesucht wird. Eine Änderung oben beeinflusst alles danach.",
+    "en": "Settings stack in that order: smaller RAW + lower max size = fewer pixels before detection; det_size = how hard the detector looks. A change upstream affects every step after it."
+  },
+  "settings.ai.tune_title": {
+    "de": "Zu langsam? In dieser Reihenfolge anpassen:",
+    "en": "Too slow? Change in this order:"
+  },
+  "settings.ai.tune_1": {
+    "de": "RAW-Dekodierung → Halb oder Viertel (nur RAW-Ordner)",
+    "en": "RAW decode → Half or Quarter (RAW folders only)"
+  },
+  "settings.ai.tune_2": {
+    "de": "Maximale Bildgröße → z. B. 1400–1600",
+    "en": "Max image size → try 1400–1600"
+  },
+  "settings.ai.tune_3": {
+    "de": "Detektor-Auflösung → z. B. 400,400 oder 448,448",
+    "en": "Face detection resolution → try 400,400 or 448,448"
+  },
+  "settings.ai.tune_4": {
+    "de": "Inferenz-Provider → nur ändern, wenn auto das falsche Gerät wählt",
+    "en": "Inference providers → only if auto picks the wrong device"
+  },
+  "settings.ai.tune_miss": {
+    "de": "Gesichter übersehen? Zuerst maximale Bildgröße und Detektor-Auflösung erhöhen, RAW erst danach auf Voll.",
+    "en": "Missing faces? Raise max image size and det_size first; switch RAW to Full only if still needed."
+  },
+  "settings.ai.raw_decode": {
+    "de": "RAW-Dekodierung",
+    "en": "RAW decode size"
+  },
+  "settings.ai.raw_decode_help": {
+    "de": "Nur für Kamera-RAW (.arw, .dng, …). JPEG/TIFF bleiben unverändert.",
+    "en": "Camera RAW files (.arw, .dng, …) only. JPEG/TIFF are unchanged."
+  },
+  "settings.ai.raw_decode.full": {
+    "de": "Voll (max. Detail)",
+    "en": "Full resolution"
+  },
+  "settings.ai.raw_decode.half": {
+    "de": "Halb (Standard)",
+    "en": "Half (balanced)"
+  },
+  "settings.ai.raw_decode.quarter": {
+    "de": "Viertel (am schnellsten)",
+    "en": "Quarter (fastest)"
+  },
+  "settings.ai.raw_decode_hint": {
+    "de": "Voll = langsamste Dekodierung, bestes Detail.\nHalb ≈ 4× schneller (guter Standard).\nViertel ≈ 8× schneller — für Tempo, wenn kleine/ferne Gesichter weniger wichtig sind.",
+    "en": "Full = slowest decode, best detail.\nHalf ≈ 4× faster (good default).\nQuarter ≈ 8× faster — prioritize speed over tiny/distant faces."
+  },
+  "settings.btn.save": {
+    "de": "Einstellungen speichern",
+    "en": "Save settings"
+  },
+  "settings.btn.test_db": {
+    "de": "Verbindung testen",
+    "en": "Test connection"
+  },
+  "settings.crop_portraits": {
+    "de": "Porträts für Personenordner-Sammlung zuschneiden",
+    "en": "Crop portraits for people-folder collect"
+  },
+  "settings.crop_portraits_help": {
+    "de": "Beim Sammeln eindeutiger Treffer in Personenordnern werden gesichtszentrierte Porträt-JPEGs gespeichert statt vollständiger Szenendateien.",
+    "en": "When collecting strong matches to people folders, save face-centered portrait JPEGs instead of copying full scene files."
+  },
+  "settings.crop_portraits_hint": {
+    "de": "Für jeden erkannten Treffer ein zugeschnittenes Gesichts-Thumbnail im Personenordner speichern.",
+    "en": "Save a cropped face thumbnail into the People folder for each detected match."
+  },
+  "settings.current_db": {
+    "de": "Aktuelle Datenbank",
+    "en": "Current database"
+  },
+  "settings.data_folder": {
+    "de": "Datenordner",
+    "en": "Data folder"
+  },
+  "settings.data_folder_help": {
+    "de": "Ordner, der lokale Daten enthält (SQLite-Datenbank, wenn keine Datenbank-URL gesetzt ist, sowie Protokolle).\n\nReihenfolge: Umgebungsvariable FACEIT_AI_DATA_DIR > dieser Wert > aktuelles Arbeitsverzeichnis.",
+    "en": "Folder that holds local data (SQLite DB when no database URL is set, plus logs).\n\nPrecedence: FACEIT_AI_DATA_DIR env var > this value > current working directory."
+  },
+  "settings.data_folder_placeholder": {
+    "de": "/pfad/zu/daten (leer lassen für aktuellen Ordner)",
+    "en": "/path/to/data (leave empty for current folder)"
+  },
+  "settings.database_url": {
+    "de": "Datenbank-URL",
+    "en": "Database URL"
+  },
+  "settings.database_url_help": {
+    "de": "Gemeinsame Datenbankverbindung für mehrere PCs.\n\nLEER lassen, um die lokale SQLite-Datei zu verwenden.\n\nPostgreSQL-Beispiel:\npostgresql+psycopg://facit:${FACIT_DB_PASSWORD}@synology.local:5432/facit\n\n${ENV}-Platzhalter werden expandiert, sodass das Passwort in einer Umgebungsvariable statt in der Datei liegen kann.",
+    "en": "Shared database connection for multiple PCs.\n\nLeave EMPTY to use the local SQLite file.\n\nPostgreSQL example:\npostgresql+psycopg://facit:${FACIT_DB_PASSWORD}@synology.local:5432/facit\n\n${ENV} placeholders are expanded, so the password can live in an environment variable instead of the file."
+  },
+  "settings.database_url_placeholder": {
+    "de": "leer = lokales SQLite; oder postgresql+psycopg://user:pass@host:5432/facit",
+    "en": "empty = local SQLite; or postgresql+psycopg://user:pass@host:5432/facit"
+  },
+  "settings.db.failed": {
+    "de": "Fehlgeschlagen: {error}",
+    "en": "Failed: {error}"
+  },
+  "settings.db.hint": {
+    "de": "Nach Änderung der Datenbank-URL zuerst die Einstellungen speichern und dann einmalig init_db gegen die neue Datenbank ausführen (und migrate_sqlite_to_db, falls vorhandene Daten übernommen werden sollen).",
+    "en": "After changing the database URL, save settings, then run init_db once against the new database (and migrate_sqlite_to_db if you want to move existing data)."
+  },
+  "settings.db.ok": {
+    "de": "OK: verbunden mit {backend}.",
+    "en": "OK: connected to {backend}."
+  },
+  "settings.db.testing": {
+    "de": "Verbindung wird getestet…",
+    "en": "Testing connection..."
+  },
+  "settings.export.blocked": {
+    "de": "flagged/blocked",
+    "en": "flagged/blocked"
+  },
+  "settings.export.blocked_help": {
+    "de": "Gesperrte Fotos nach flagged/blocked/ kopieren/verschieben.",
+    "en": "Copy/move blocked photos into flagged/blocked/."
+  },
+  "settings.export.copy": {
+    "de": "kopieren",
+    "en": "copy"
+  },
+  "settings.export.move": {
+    "de": "verschieben",
+    "en": "move"
+  },
+  "settings.export.off": {
+    "de": "aus",
+    "en": "off"
+  },
+  "settings.export.review": {
+    "de": "flagged/review",
+    "en": "flagged/review"
+  },
+  "settings.export.review_help": {
+    "de": "Prüfungsfotos (möglicherweise gesperrte Person, unsicher) nach flagged/review/ kopieren/verschieben.",
+    "en": "Copy/move Review photos (possible Blocked person, uncertain) into flagged/review/."
+  },
+  "settings.export_flagged": {
+    "de": "Markierte Dateien exportieren",
+    "en": "Export flagged files"
+  },
+  "settings.export_flagged_help": {
+    "de": "Was mit markierten Dateien nach der Analyse geschehen soll (aus / kopieren / verschieben).",
+    "en": "What to do with flagged files after analysis (off / copy / move)."
+  },
+  "settings.export_hint": {
+    "de": "Auswählen, welche Kategorien exportiert werden, wenn die Analyse eine Übereinstimmung findet.",
+    "en": "Choose which categories get exported when analysis finds a match."
+  },
+  "settings.force_reanalyze": {
+    "de": "Neuanalyse erzwingen",
+    "en": "Force re-analyze"
+  },
+  "settings.force_reanalyze_help": {
+    "de": "Dateien erneut verarbeiten, auch wenn sie bereits in der Datenbank vorhanden sind. Langsamer, aktualisiert aber die Entscheidungen.",
+    "en": "Reprocess files even when already present in DB. Slower, but refreshes decisions."
+  },
+  "settings.force_reanalyze_hint": {
+    "de": "Zwischengespeicherte Ergebnisse ignorieren und die Erkennung für jedes Foto erneut ausführen.",
+    "en": "Ignore previously cached results and re-run detection on every photo."
+  },
+  "settings.group.archive": {
+    "de": "Archivkopie (NAS)",
+    "en": "Archive copy (NAS)"
+  },
+  "settings.group.flagged": {
+    "de": "Markierte Fotos sortieren (gesperrt/Prüfung)",
+    "en": "Sort flagged photos (blocked/review)"
+  },
+  "settings.group.people_folder": {
+    "de": "Personenordner",
+    "en": "People folder"
+  },
+  "settings.group.reanalysis": {
+    "de": "Neuanalyse",
+    "en": "Re-analysis"
+  },
+  "settings.ingest_enable": {
+    "de": "Archivkopie aktivieren",
+    "en": "Enable archive copy"
+  },
+  "settings.ingest_enable_help": {
+    "de": "Wenn aktiviert, fragt die Analyse-Seite bei jedem Durchlauf nach einem Ziel. Quelldateien werden nie gelöscht.",
+    "en": "When enabled, the Analyze page asks for a destination for each run. Source files are never deleted."
+  },
+  "settings.ingest_order": {
+    "de": "Reihenfolge",
+    "en": "Order"
+  },
+  "settings.ingest_order.analyze_first": {
+    "de": "Zuerst Quelle analysieren, dann alles ins Archiv kopieren",
+    "en": "Analyze source, then copy all to archive"
+  },
+  "settings.ingest_order.copy_first": {
+    "de": "Zuerst ins Archiv kopieren, dann analysieren",
+    "en": "Copy to archive, then analyze"
+  },
+  "settings.ingest_order_help": {
+    "de": "Zuerst kopieren: Analyse und flagged/-Export erfolgen auf der Archivkopie. Zuerst analysieren: Arbeit erfolgt auf der Quelle, danach wird alles (einschließlich flagged/) ins Archiv kopiert.",
+    "en": "Copy first: analyze and flagged/ export on the archive copy. Analyze first: work on source, then copy everything (including flagged/) to archive."
+  },
+  "settings.ingest_order_hint": {
+    "de": "Das Ziel wird auf der Analyse-Seite für jeden Ordner festgelegt. Bei „Zuerst kopieren\" wird flagged/ auf der Archivkopie angelegt. Bei „Zuerst analysieren\" liegt flagged/ auf der Quelle und wird anschließend ins Archiv kopiert.",
+    "en": "Set the destination path on the Analyze page for each folder. With \"copy first\", flagged/ is created on the archive copy. With \"analyze first\", flagged/ is on source and copied to archive afterward."
+  },
+  "settings.lr.blocked_label": {
+    "de": "Farbmarkierung für Gesperrt",
+    "en": "Blocked label"
+  },
+  "settings.lr.blocked_label_help": {
+    "de": "Farbmarkierung, die gesetzt wird, wenn eine Person ohne Einwilligung erkannt wird.",
+    "en": "Label applied when a non-consented person is detected."
+  },
+  "settings.lr.color.blau": {
+    "de": "Blau",
+    "en": "Blau"
+  },
+  "settings.lr.color.gelb": {
+    "de": "Gelb",
+    "en": "Gelb"
+  },
+  "settings.lr.color.gruen": {
+    "de": "Grün",
+    "en": "Grün"
+  },
+  "settings.lr.color.lila": {
+    "de": "Lila",
+    "en": "Lila"
+  },
+  "settings.lr.color.none": {
+    "de": "Keine",
+    "en": "None"
+  },
+  "settings.lr.color.rot": {
+    "de": "Rot",
+    "en": "Rot"
+  },
+  "settings.lr.enable": {
+    "de": "Lightroom-Metadaten aktivieren",
+    "en": "Enable Lightroom Meta Data"
+  },
+  "settings.lr.enable_help": {
+    "de": "Nach Abschluss der Analyse wird der Metadatenabgleich (Lightroom-Farbmarkierungen/Schlagwörter via ExifTool) für gesperrte/Prüfungsfotos ausgeführt.",
+    "en": "After analyze finishes, run metadata sync (Lightroom labels/keywords via ExifTool) for blocked/review photos."
+  },
+  "settings.lr.exiftool_path": {
+    "de": "ExifTool-Pfad",
+    "en": "ExifTool path"
+  },
+  "settings.lr.labels_group": {
+    "de": "Lightroom-Farbmarkierungen",
+    "en": "Lightroom Labels"
+  },
+  "settings.lr.ok_label": {
+    "de": "Farbmarkierung für OK",
+    "en": "OK label"
+  },
+  "settings.lr.ok_label_help": {
+    "de": "Farbmarkierung, die gesetzt wird, wenn ein Foto als unbedenklich/ok gilt.",
+    "en": "Label applied when a photo is considered safe/ok."
+  },
+  "settings.lr.review_label": {
+    "de": "Farbmarkierung für Prüfung",
+    "en": "Review label"
+  },
+  "settings.lr.review_label_help": {
+    "de": "Farbmarkierung, wenn ein Gesicht möglicherweise einer gesperrten Person gehört (unsichere Übereinstimmung) — erfordert manuelle Prüfung.",
+    "en": "Label when a face might be a Blocked person (uncertain match) — needs a human check."
+  },
+  "settings.lr.verify": {
+    "de": "Metadaten nach dem Schreiben überprüfen",
+    "en": "Verify metadata after writing"
+  },
+  "settings.lr.verify_help": {
+    "de": "Datei nach dem Schreiben der Metadaten zur Überprüfung erneut lesen. Sicherer, aber langsamer.",
+    "en": "Read file after writing metadata for verification. Safer but slower."
+  },
+  "settings.section.ai": {
+    "de": "KI-Modell",
+    "en": "AI Model"
+  },
+  "settings.section.analyze": {
+    "de": "Analyse-Einstellungen",
+    "en": "Analyze Settings"
+  },
+  "settings.section.data": {
+    "de": "Daten & Datenbank (mehrere PCs)",
+    "en": "Data & Database (multi-PC)"
+  },
+  "settings.section.lightroom": {
+    "de": "Lightroom",
+    "en": "Lightroom"
+  },
+  "stage.analyzing": {
+    "de": "Fotos werden analysiert",
+    "en": "Analyzing photos"
+  },
+  "stage.collecting_people": {
+    "de": "Wird in Personenordner gesammelt",
+    "en": "Collecting to people folders"
+  },
+  "stage.copying_archive": {
+    "de": "Wird ins Archiv kopiert",
+    "en": "Copying to archive"
+  },
+  "stage.exporting_flagged": {
+    "de": "Markierte Fotos werden exportiert",
+    "en": "Exporting flagged photos"
+  },
+  "stage.finished": {
+    "de": "Abgeschlossen",
+    "en": "Finished"
+  },
+  "stage.finishing_analysis": {
+    "de": "Analyse wird abgeschlossen",
+    "en": "Finishing analysis"
+  },
+  "stage.loading_models": {
+    "de": "Modelle werden geladen",
+    "en": "Loading models"
+  },
+  "stage.preparing": {
+    "de": "Wird vorbereitet",
+    "en": "Preparing"
+  },
+  "stage.registering_people": {
+    "de": "Neue Personen werden registriert",
+    "en": "Registering new people"
+  },
+  "stage.scanning_folder": {
+    "de": "Ordner wird gescannt",
+    "en": "Scanning folder"
+  },
+  "stage.waiting": {
+    "de": "Wartet",
+    "en": "Waiting"
+  },
+  "stage.writing_metadata": {
+    "de": "Metadaten werden geschrieben",
+    "en": "Writing metadata"
+  },
+  "status.completed": {
+    "de": "Abgeschlossen",
+    "en": "Completed"
+  },
+  "status.completed_warnings": {
+    "de": "Abgeschlossen mit Warnungen",
+    "en": "Completed with warnings"
+  },
+  "status.failed": {
+    "de": "Fehlgeschlagen",
+    "en": "Failed"
+  },
+  "status.idle": {
+    "de": "Bereit",
+    "en": "Idle"
+  },
+  "status.running": {
+    "de": "Läuft",
+    "en": "Running"
+  },
+  "status.stopped": {
+    "de": "Gestoppt",
+    "en": "Stopped"
+  },
+  "subtitle.analyze": {
+    "de": "Fotos analysieren und Metadaten synchronisieren.",
+    "en": "Analyze photos and metadata sync."
+  },
+  "subtitle.people": {
+    "de": "Der Personenordner ist die Quelle der Wahrheit. Scan gleicht die Datenbank ab.",
+    "en": "People folder is the source of truth. Scan syncs the database to match."
+  },
+  "subtitle.review": {
+    "de": "Prüfungs- und gesperrte Fotos durchsehen; Gesichter zuweisen und Entscheidungen bestätigen.",
+    "en": "Browse Review and Blocked photos; assign faces and confirm decisions."
+  },
+  "subtitle.settings": {
+    "de": "Erkennung und Metadaten-Parameter einstellen.",
+    "en": "Tune detection and metadata write parameters."
+  },
+  "tk.analyze.frame": {
+    "de": "Analyse + automatischer Metadatenabgleich",
+    "en": "Analyze + Auto Metadata Sync"
+  },
+  "tk.analyze.start": {
+    "de": "Analyse-Batch starten",
+    "en": "Start Analyze Batch"
+  },
+  "tk.btn.browse": {
+    "de": "Durchsuchen",
+    "en": "Browse"
+  },
+  "tk.log.clear": {
+    "de": "Protokoll leeren",
+    "en": "Clear Log"
+  },
+  "tk.log.frame": {
+    "de": "Live-Protokoll",
+    "en": "Live Log"
+  },
+  "tk.people.frame": {
+    "de": "Personenordner (Fehlende registrieren)",
+    "en": "People Folder (Register Missing)"
+  },
+  "tk.people.scan": {
+    "de": "Personenordner-Scan starten",
+    "en": "Start Scan People Folder"
+  },
+  "tk.tab.run": {
+    "de": "Batch ausführen",
+    "en": "Run Batch"
+  },
+  "tk.tab.settings": {
+    "de": "Such-/Metadaten-Einstellungen",
+    "en": "Search/Metadata Settings"
+  },
+  "tk.tune.reload": {
+    "de": "Aus Konfiguration neu laden",
+    "en": "Reload from config"
+  },
+  "tk.tune.save": {
+    "de": "Einstellungen in YAML speichern",
+    "en": "Save settings to YAML"
+  },
+  "tk.window_title": {
+    "de": "faceit_ai Batch-GUI",
+    "en": "faceit_ai batch GUI"
+  }
+}

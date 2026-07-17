@@ -976,15 +976,33 @@ def _popen_cli(cmd: list[str], *, start_new_session: bool = False) -> subprocess
     )
 
 
+def _kill_process_tree(proc: subprocess.Popen[str], *, force: bool = False) -> None:
+    """Signal a CLI subprocess (and its group on Unix). Windows has no killpg."""
+    if not force:
+        if hasattr(os, "killpg") and hasattr(os, "getpgid") and proc.pid:
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                return
+            except (AttributeError, ProcessLookupError, PermissionError, OSError):
+                pass
+        proc.terminate()
+        return
+
+    if hasattr(os, "killpg") and hasattr(os, "getpgid") and proc.pid and hasattr(signal, "SIGKILL"):
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            return
+        except (AttributeError, ProcessLookupError, PermissionError, OSError):
+            pass
+    proc.kill()
+
+
 def _send_stop_signal(proc: subprocess.Popen[str] | None) -> None:
-    """Ask a subprocess to stop (SIGTERM to its process group). Does not block."""
+    """Ask a subprocess to stop (SIGTERM / terminate). Does not block."""
     if proc is None or proc.poll() is not None:
         return
     try:
-        try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-        except (ProcessLookupError, PermissionError, OSError):
-            proc.terminate()
+        _kill_process_tree(proc, force=False)
     except (OSError, subprocess.SubprocessError) as e:
         STATE.add_log(f"[warn] stop signal failed: {e}")
 
@@ -995,17 +1013,11 @@ def _terminate_proc(proc: subprocess.Popen[str] | None, *, graceful: bool = Fals
         return
     timeout = 120 if graceful else 3
     try:
-        try:
-            os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
-        except (ProcessLookupError, PermissionError, OSError):
-            proc.terminate()
+        _kill_process_tree(proc, force=False)
         try:
             proc.wait(timeout=timeout)
         except subprocess.TimeoutExpired:
-            try:
-                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
-            except (ProcessLookupError, PermissionError, OSError):
-                proc.kill()
+            _kill_process_tree(proc, force=True)
             proc.wait(timeout=2)
     except (OSError, subprocess.SubprocessError) as e:
         STATE.add_log(f"[warn] stop failed: {e}")

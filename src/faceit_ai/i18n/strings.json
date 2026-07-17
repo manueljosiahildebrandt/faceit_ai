@@ -243,6 +243,10 @@
     "de": "Als gesperrt markiert; {c} Ausschnitt(e), {e} Embedding(s) hinzugefügt.",
     "en": "Marked blocked; {c} crop(s), {e} embedding(s) added."
   },
+  "api.add_faces_ok": {
+    "de": "Gesichter hinzugefügt: {c} Ausschnitt(e), {e} Embedding(s).",
+    "en": "Faces added: {c} crop(s), {e} embedding(s)."
+  },
   "api.choose_people_folder": {
     "de": "Bitte zuerst einen Personenordner auswählen.",
     "en": "Please choose a people folder first."
@@ -258,6 +262,10 @@
   "api.create_need_names": {
     "de": "Vorname und Nachname sind erforderlich.",
     "en": "Vorname and Nachname are required."
+  },
+  "api.ensure_folder_ok": {
+    "de": "Personenordner angelegt: {display} ({slug})",
+    "en": "People folder ready: {display} ({slug})"
   },
   "api.create_ok": {
     "de": "{display} als Ordner {slug} erstellt ({n} Foto(s) gespeichert). „Re-registrieren\" ausführen, um Gesichter zu erfassen.",
@@ -539,6 +547,10 @@
     "de": "Ordner für faceit_ai Web-Oberfläche auswählen",
     "en": "Select folder for faceit_ai web UI"
   },
+  "picker.media_folder": {
+    "de": "Beliebiges Foto im Zielordner wählen — der Ordner wird übernommen",
+    "en": "Select any photo inside the target folder — the folder will be used"
+  },
   "people.alert.tag_failed": {
     "de": "Tag-Aktualisierung fehlgeschlagen.",
     "en": "Tag update failed."
@@ -682,6 +694,14 @@
   "people.gallery.prev": {
     "de": "← Zurück",
     "en": "← Previous"
+  },
+  "people.gallery.source_unknown": {
+    "de": "Quelle unbekannt",
+    "en": "Source unknown"
+  },
+  "people.gallery.match_score": {
+    "de": "Treffer: {n}",
+    "en": "Match: {n}"
   },
   "people.gallery.title": {
     "de": "Fotos",
@@ -907,6 +927,10 @@
     "de": "Alle nach Gesperrt verschieben",
     "en": "Batch move to Blocked"
   },
+  "review.btn.add_faces": {
+    "de": "Gesichter zu Personen hinzufügen",
+    "en": "Add faces to people"
+  },
   "review.btn.load": {
     "de": "Fotos laden",
     "en": "Load photos"
@@ -930,6 +954,10 @@
   "review.confirm.blocked": {
     "de": "Nach Gesperrt verschieben und Referenzausschnitte hinzufügen für:\n{summary}",
     "en": "Move to blocked and add reference crops for:\n{summary}"
+  },
+  "review.confirm.add_faces": {
+    "de": "Referenzausschnitte für diese Gesichter zu Personen hinzufügen?\n{summary}",
+    "en": "Add reference crops for these faces to people?\n{summary}"
   },
   "review.confirm.ok_from_blocked": {
     "de": "Dieses Foto nach OK verschieben? (hebt den gesperrten Status auf; markierte Kopien auf der Festplatte bleiben unverändert)",
@@ -1039,6 +1067,38 @@
     "de": "— Unbekannte Person —",
     "en": "— Unknown person —"
   },
+  "review.person.not_in_folder": {
+    "de": "nicht im Ordner",
+    "en": "not in folder"
+  },
+  "review.person.search_placeholder": {
+    "de": "Person suchen…",
+    "en": "Search people…"
+  },
+  "review.person.add_to_folder": {
+    "de": "Zum Personenordner hinzufügen",
+    "en": "Add to people folder"
+  },
+  "review.person.add_new": {
+    "de": "+ Neue Person…",
+    "en": "+ Add new person…"
+  },
+  "review.person.add_title": {
+    "de": "Neue Person anlegen",
+    "en": "Add new person"
+  },
+  "review.person.add_submit": {
+    "de": "Anlegen und auswählen",
+    "en": "Create and select"
+  },
+  "review.person.ensure_failed": {
+    "de": "Personenordner konnte nicht angelegt werden.",
+    "en": "Could not create people folder."
+  },
+  "review.person.create_failed": {
+    "de": "Person konnte nicht angelegt werden.",
+    "en": "Could not create person."
+  },
   "review.tab.blocked": {
     "de": "Gesperrt",
     "en": "Blocked"
@@ -1084,8 +1144,8 @@
     "en": "Inference providers"
   },
   "settings.ai.providers_help": {
-    "de": "ONNX-Runtime-Provider für InsightFace. „auto\" (Standard) verwendet CUDA, sofern verfügbar, sonst CPU. CoreML wird übersprungen (nicht kompatibel mit InsightFace SCRFD). Beispiel: auto oder CPUExecutionProvider",
-    "en": "ONNX Runtime providers for InsightFace. Use auto (default) for CUDA when available, else CPU. CoreML is skipped (incompatible with InsightFace SCRFD). Example: auto or CPUExecutionProvider"
+    "de": "ONNX-Runtime-Provider für InsightFace. „auto“ (Standard): CUDA (falls installiert), sonst DirectML unter Windows (DX12-GPU), sonst CPU. CoreML wird übersprungen (nicht kompatibel mit InsightFace SCRFD). Beispiel: auto, DmlExecutionProvider oder CPUExecutionProvider",
+    "en": "ONNX Runtime providers for InsightFace. auto (default): CUDA if installed, else DirectML on Windows (any DX12 GPU), else CPU. CoreML is skipped (incompatible with InsightFace SCRFD). Example: auto, DmlExecutionProvider, or CPUExecutionProvider"
   },
   "settings.ai.providers_placeholder": {
     "de": "auto",

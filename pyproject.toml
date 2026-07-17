@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "faceit-ai"
-version = "0.0.12"
+version = "0.0.14"
 description = "Local GDPR-aware face recognition pipeline for photo moderation"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -16,7 +16,9 @@ dependencies = [
     "rawpy>=0.19.0",
     "Pillow>=10.2",
     "insightface>=1.0.1",
-    "onnxruntime>=1.17",
+    # Windows: DirectML (any DX12 GPU). Elsewhere: stock ORT (CUDA via onnxruntime-gpu if installed).
+    "onnxruntime-directml>=1.17; sys_platform == 'win32'",
+    "onnxruntime>=1.17; sys_platform != 'win32'",
     "SQLAlchemy>=2.0.25",
     "PyYAML>=6.0.1",
     "click>=8.1",
@@ -30,6 +32,8 @@ dev = [
 ]
 # Shared multi-PC database backend (PostgreSQL). Not needed for local SQLite mode.
 postgres = ["psycopg[binary]>=3.1"]
+# Optional NVIDIA CUDA build (Linux/Windows). Conflicts with onnxruntime / onnxruntime-directml.
+cuda = ["onnxruntime-gpu>=1.17"]
 
 [project.scripts]
 analyze_photos = "faceit_ai.cli:analyze_photos_cli"

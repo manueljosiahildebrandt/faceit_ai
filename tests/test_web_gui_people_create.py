@@ -112,3 +112,24 @@ def test_cycle_person_tag_consent(people_env: Path) -> None:
     resp = web_gui._update_person_tags_request({"name": slug, "cycle": "2026"})
     assert resp["ok"] is True
     assert resp["tags"] == [{"tag": "2026", "consent": "allowed"}]
+
+
+def test_ensure_person_folder_creates_missing(people_env: Path) -> None:
+    resp = web_gui._ensure_person_folder_request("mueller_anna", "Anna Mueller")
+    assert resp["ok"] is True
+    assert resp["created"] is True
+    assert resp["slug"] == "mueller_anna"
+    folder = people_env / "mueller_anna"
+    assert folder.is_dir()
+    profile = read_person_json(folder)
+    assert profile is not None
+    assert "Anna" in (profile.display_name or "")
+
+
+def test_ensure_person_folder_idempotent(people_env: Path) -> None:
+    first = web_gui._ensure_person_folder_request("ehmer_daniel")
+    assert first["ok"] is True
+    second = web_gui._ensure_person_folder_request("ehmer_daniel")
+    assert second["ok"] is True
+    assert second["created"] is False
+    assert second["slug"] == "ehmer_daniel"

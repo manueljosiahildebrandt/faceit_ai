@@ -124,6 +124,12 @@ Format per row: `key` | `en` | `de` — DE filled in `strings.json`; keep this d
 | review.face.score | score {n} |   Score {n} |
 | review.face.heading | Face #{id} | Gesicht #{id} |
 | review.person.unknown_option | — Unknown person — | — Unbekannte Person — |
+| review.person.not_in_folder | not in folder | nicht im Ordner |
+| review.person.search_placeholder | Search people… | Person suchen… |
+| review.person.add_to_folder | Add to people folder | Zum Personenordner hinzufügen |
+| review.person.add_new | + Add new person… | + Neue Person… |
+| review.person.add_title | Add new person | Neue Person anlegen |
+| review.person.add_submit | Create and select | Anlegen und auswählen |
 | review.meta.processing | Processing… | Wird verarbeitet… |
 | review.meta.batch_processing | Batch processing… | Stapelverarbeitung… |
 | review.alert.move_ok_failed | Could not move photo to OK. | Foto konnte nicht nach OK verschoben werden. |
@@ -211,6 +217,7 @@ Format per row: `key` | `en` | `de` — DE filled in `strings.json`; keep this d
 | people.gallery.title | Photos | Fotos |
 | people.gallery.prev | ← Previous | ← Zurück |
 | people.gallery.next | Next → | Weiter → |
+| people.gallery.source_unknown | Source unknown | Quelle unbekannt |
 | people.gallery.delete | Delete picture | Bild löschen |
 | people.gallery.loading | Loading photos… | Fotos werden geladen… |
 | people.gallery.count_hint | {n} photo(s) — click a thumbnail or use ← → arrow keys | {n} Foto(s) — Miniaturbild anklicken oder ← → Pfeiltasten verwenden |
@@ -290,7 +297,7 @@ Format per row: `key` | `en` | `de` — DE filled in `strings.json`; keep this d
 | settings.lr.exiftool_path | ExifTool path | ExifTool-Pfad |
 | settings.section.ai | AI Model | KI-Modell |
 | settings.ai.providers | Inference providers | Inferenz-Provider |
-| settings.ai.providers_help | ONNX Runtime providers for InsightFace. Use auto (default) for CUDA when available, else CPU. CoreML is skipped (incompatible with InsightFace SCRFD). Example: auto or CPUExecutionProvider | ONNX-Runtime-Provider für InsightFace. „auto" (Standard) verwendet CUDA, sofern verfügbar, sonst CPU. CoreML wird übersprungen (nicht kompatibel mit InsightFace SCRFD). Beispiel: auto oder CPUExecutionProvider |
+| settings.ai.providers_help | ONNX Runtime providers for InsightFace. auto (default): CUDA if installed, else DirectML on Windows (any DX12 GPU), else CPU. CoreML is skipped (incompatible with InsightFace SCRFD). Example: auto, DmlExecutionProvider, or CPUExecutionProvider | ONNX-Runtime-Provider für InsightFace. „auto“ (Standard): CUDA (falls installiert), sonst DirectML unter Windows (DX12-GPU), sonst CPU. CoreML wird übersprungen (nicht kompatibel mit InsightFace SCRFD). Beispiel: auto, DmlExecutionProvider oder CPUExecutionProvider |
 | settings.ai.providers_placeholder | auto | auto |
 | settings.ai.det_size | Face detection resolution | Auflösung der Gesichtserkennung |
 | settings.ai.det_size_help | Detector input size (width,height).\n\nExamples:\n640,640 = higher quality, slower\n512,512 = balanced default\n400,400 = faster, may miss small/distant faces\n\nLow-end CPU: try 400-512\nHigh-end CPU/GPU: 512-640 is usually best. | Eingabegröße des Detektors (Breite,Höhe).\n\nBeispiele:\n640,640 = höhere Qualität, langsamer\n512,512 = ausgewogener Standard\n400,400 = schneller, kann kleine/entfernte Gesichter übersehen\n\nSchwache CPU: 400-512 ausprobieren\nStarke CPU/GPU: 512-640 ist meist am besten. |

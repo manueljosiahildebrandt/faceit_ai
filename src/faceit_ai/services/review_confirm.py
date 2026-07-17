@@ -20,6 +20,7 @@ from faceit_ai.persistence.models import Asset, AssetDecision, AssetFace, Person
 from faceit_ai.persistence.repository import ConsentRepository
 from faceit_ai.persistence.session import session_scope
 from faceit_ai.services.collect_matches import _write_cropped_portrait
+from faceit_ai.services.collected_photos import upsert_collected_photo
 from faceit_ai.services.flagged_export import export_single_flagged_asset
 from faceit_ai.settings import CollectSettings, Settings
 from faceit_ai.vision.face_crop import parse_bbox_json
@@ -81,11 +82,10 @@ def _resolved_folder(folder: Path) -> Path:
 
 
 def path_under_folder(path: Path, folder: Path) -> bool:
-    try:
-        path.expanduser().resolve().relative_to(_resolved_folder(folder))
-        return True
-    except ValueError:
-        return False
+    """True if ``path`` lives under ``folder`` (works across Mac/Windows mount spellings)."""
+    from faceit_ai.services.processing_runs import asset_path_in_folder
+
+    return asset_path_in_folder(path, folder)
 
 
 def _load_faces_for_asset(session: Session, asset_id: int) -> list[ReviewFaceInfo]:
@@ -301,6 +301,98 @@ def _dest_stem_suffix(person_counts: Counter[str], person_name: str) -> str:
 
 
 @dataclass(frozen=True)
+class SaveAssignmentsResult:
+    updated: int
+    crops_written: int
+    embeddings_added: int
+
+
+def _collect_face_into_person_folder(
+    *,
+    session: Session,
+    face_row: AssetFace,
+    asset_id: int,
+    source_path: Path,
+    person_name: str,
+    people_root: Path,
+    settings: Settings,
+    eff_collect: CollectSettings,
+    person_counts: Counter[str],
+    repo: ConsentRepository,
+    embedding_dim: int,
+    audit: logging.Logger | None,
+    log: logging.Logger,
+    force_embedding: bool = False,
+) -> tuple[bool, bool, str | None]:
+    """Write crop + link person/embedding. Returns (crop_written, embedding_added, dest)."""
+    name = person_name.strip()
+    bbox = parse_bbox_json(str(face_row.bbox))
+    suffix = _dest_stem_suffix(person_counts, name)
+    dest_dir = (people_root.expanduser().resolve() / name).resolve()
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / f"{source_path.stem}{suffix}.jpg"
+
+    crop_written = False
+    if _write_cropped_portrait(
+        source_path=source_path,
+        dest=dest,
+        bbox=bbox,
+        image_cfg=settings.pipeline.image,
+        collect=eff_collect,
+        log=log,
+    ):
+        crop_written = True
+        if audit is not None:
+            log_collect_audit(
+                audit,
+                src=str(source_path),
+                dest=str(dest),
+                person=name,
+                action="review_confirm_crop",
+                extra={"face_id": int(face_row.id)},
+            )
+        try:
+            upsert_collected_photo(
+                session,
+                collected_path=dest,
+                source_path=source_path,
+                asset_id=asset_id,
+                person_name=name,
+                match_score=float(face_row.match_score)
+                if face_row.match_score is not None
+                else None,
+            )
+        except Exception:
+            log.exception("review_confirm: failed to record source link for %s", dest)
+    else:
+        log.warning("review_confirm: crop failed for face %s on %s", face_row.id, source_path)
+
+    person = repo.upsert_person_with_consent(
+        name=name,
+        consent_given=False,
+        usage_social=True,
+        usage_web=True,
+        usage_internal=True,
+        usage_print=True,
+    )
+    repo.update_consent_for_person_name(name=name, consent_given=False)
+
+    already_same = (
+        face_row.match_person_id is not None and int(face_row.match_person_id) == int(person.id)
+    )
+    embedding_added = False
+    if force_embedding or not already_same:
+        emb = blob_to_embedding(face_row.embedding, embedding_dim)
+        repo.add_embedding(person.id, emb)
+        embedding_added = True
+
+    face_row.match_person_id = int(person.id)
+    if face_row.match_score is None:
+        face_row.match_score = 1.0
+    return crop_written, embedding_added, (str(dest) if crop_written else None)
+
+
+@dataclass(frozen=True)
 class ConfirmOkResult:
     asset_id: int
     metadata_applied: bool
@@ -442,6 +534,109 @@ def confirm_review_ok(
     return ConfirmOkResult(asset_id=asset_id, metadata_applied=metadata_applied)
 
 
+def save_review_face_assignments(
+    *,
+    session: Session,
+    asset_id: int,
+    folder: Path,
+    face_assignments: list[FaceAssignment],
+    image_cfg: Any,
+    status: DecisionStatus = "review",
+    settings: Settings | None = None,
+    people_root: Path | None = None,
+    audit: logging.Logger | None = None,
+    logger: logging.Logger | None = None,
+    embedding_dim: int = 512,
+) -> SaveAssignmentsResult:
+    """Persist face→person matches without changing decision status.
+
+    Empty ``person_name`` clears the match (explicit Unknown). When ``people_root``
+    and ``settings`` are set, named assignments are also cropped into that person's
+    folder and (if newly assigned) get an embedding — same as Add faces / Move to blocked.
+    """
+    log = logger or logging.getLogger("faceit_ai")
+    if not face_assignments:
+        return SaveAssignmentsResult(updated=0, crops_written=0, embeddings_added=0)
+    detail = load_review_asset_detail(
+        session, asset_id, folder, image_cfg=image_cfg, status=status
+    )
+    if detail is None:
+        raise ValueError("Asset not found or not in this status for the folder")
+
+    face_by_id = {f.face_id: f for f in detail.faces}
+    repo = ConsentRepository(session)
+    updated = 0
+    crops_written = 0
+    embeddings_added = 0
+    person_counts: Counter[str] = Counter()
+    source_path = Path(detail.path)
+    do_collect = people_root is not None and settings is not None and not detail.missing_on_disk
+    eff_collect: CollectSettings | None = None
+    if do_collect and settings is not None and people_root is not None:
+        collect = settings.collect
+        eff_collect = CollectSettings(
+            people_root=people_root,
+            crop_portrait=True,
+            crop_aspect_w=collect.crop_aspect_w,
+            crop_aspect_h=collect.crop_aspect_h,
+            crop_padding=collect.crop_padding,
+            output_format=collect.output_format,
+        )
+
+    for assign in face_assignments:
+        if assign.face_id not in face_by_id:
+            raise ValueError(f"Face id {assign.face_id} does not belong to this asset")
+        face_row = session.get(AssetFace, assign.face_id)
+        if face_row is None or int(face_row.asset_id) != asset_id:
+            raise ValueError(f"Invalid face id {assign.face_id}")
+
+        name = assign.person_name.strip()
+        if not name:
+            face_row.match_person_id = None
+            face_row.match_score = None
+        elif do_collect and settings is not None and people_root is not None and eff_collect is not None:
+            crop_ok, emb_ok, _dest = _collect_face_into_person_folder(
+                session=session,
+                face_row=face_row,
+                asset_id=asset_id,
+                source_path=source_path,
+                person_name=name,
+                people_root=people_root,
+                settings=settings,
+                eff_collect=eff_collect,
+                person_counts=person_counts,
+                repo=repo,
+                embedding_dim=embedding_dim,
+                audit=audit,
+                log=log,
+            )
+            if crop_ok:
+                crops_written += 1
+            if emb_ok:
+                embeddings_added += 1
+        else:
+            person = repo.get_active_person_by_name(name)
+            if person is None:
+                person = repo.upsert_person_with_consent(
+                    name=name,
+                    consent_given=False,
+                    usage_social=True,
+                    usage_web=True,
+                    usage_internal=True,
+                    usage_print=True,
+                )
+            face_row.match_person_id = int(person.id)
+            if face_row.match_score is None:
+                face_row.match_score = 1.0
+        updated += 1
+    session.flush()
+    return SaveAssignmentsResult(
+        updated=updated,
+        crops_written=crops_written,
+        embeddings_added=embeddings_added,
+    )
+
+
 def confirm_review_blocked(
     *,
     session: Session,
@@ -455,16 +650,18 @@ def confirm_review_blocked(
     audit: logging.Logger | None = None,
     logger: logging.Logger | None = None,
     embedding_dim: int = 512,
+    status: DecisionStatus = "review",
 ) -> ConfirmReviewResult:
     log = logger or logging.getLogger("faceit_ai")
     if not face_assignments:
         raise ValueError("At least one face assignment is required")
 
+    want = _normalize_status(status)
     detail = load_review_asset_detail(
-        session, asset_id, folder, image_cfg=settings.pipeline.image
+        session, asset_id, folder, image_cfg=settings.pipeline.image, status=want
     )
     if detail is None:
-        raise ValueError("Asset not found or not in review status for this folder")
+        raise ValueError("Asset not found or not in this status for the folder")
     if detail.missing_on_disk:
         raise ValueError("Source file missing on disk")
 
@@ -484,6 +681,7 @@ def confirm_review_blocked(
     crops_written = 0
     embeddings_added = 0
     crop_destinations: list[str] = []
+    already_blocked = want == "blocked"
 
     for assign in face_assignments:
         name = assign.person_name.strip()
@@ -496,58 +694,41 @@ def confirm_review_blocked(
         if face_row is None or int(face_row.asset_id) != asset_id:
             raise ValueError(f"Invalid face id {assign.face_id}")
 
-        bbox = parse_bbox_json(str(face_row.bbox))
-        suffix = _dest_stem_suffix(person_counts, name)
-        dest_dir = (people_root.expanduser().resolve() / name).resolve()
-        dest_dir.mkdir(parents=True, exist_ok=True)
-        dest = dest_dir / f"{source_path.stem}{suffix}.jpg"
-
-        if _write_cropped_portrait(
+        crop_ok, emb_ok, dest = _collect_face_into_person_folder(
+            session=session,
+            face_row=face_row,
+            asset_id=asset_id,
             source_path=source_path,
-            dest=dest,
-            bbox=bbox,
-            image_cfg=settings.pipeline.image,
-            collect=eff_collect,
+            person_name=name,
+            people_root=people_root,
+            settings=settings,
+            eff_collect=eff_collect,
+            person_counts=person_counts,
+            repo=repo,
+            embedding_dim=embedding_dim,
+            audit=audit,
             log=log,
-        ):
-            crops_written += 1
-            crop_destinations.append(str(dest))
-            if audit is not None:
-                log_collect_audit(
-                    audit,
-                    src=str(source_path),
-                    dest=str(dest),
-                    person=name,
-                    action="review_confirm_crop",
-                    extra={"face_id": assign.face_id},
-                )
-        else:
-            log.warning("review_confirm: crop failed for face %s on %s", assign.face_id, source_path)
-
-        person = repo.upsert_person_with_consent(
-            name=name,
-            consent_given=False,
-            usage_social=True,
-            usage_web=True,
-            usage_internal=True,
-            usage_print=True,
+            force_embedding=True,
         )
-        repo.update_consent_for_person_name(name=name, consent_given=False)
-        emb = blob_to_embedding(face_row.embedding, embedding_dim)
-        repo.add_embedding(person.id, emb)
-        embeddings_added += 1
+        if crop_ok:
+            crops_written += 1
+            if dest:
+                crop_destinations.append(dest)
+        if emb_ok:
+            embeddings_added += 1
 
     decision = session.scalar(select(AssetDecision).where(AssetDecision.asset_id == asset_id))
     if decision is None:
         raise ValueError("Missing asset decision row")
-    decision.status = "blocked"
-    decision.reason = "manual_confirm"
-    decision.manual_override = True
-    decision.created_at = datetime.now(UTC)
+    if not already_blocked:
+        decision.status = "blocked"
+        decision.reason = "manual_confirm"
+        decision.manual_override = True
+        decision.created_at = datetime.now(UTC)
     session.flush()
 
     exported = False
-    if export_action in ("copy", "move"):
+    if not already_blocked and export_action in ("copy", "move"):
         ok, _missing, _warns = export_single_flagged_asset(
             session=session,
             scan_root=folder,
@@ -560,7 +741,7 @@ def confirm_review_blocked(
         exported = ok > 0
 
     metadata_applied = False
-    if metadata is not None and settings.metadata.enabled:
+    if not already_blocked and metadata is not None and settings.metadata.enabled:
         try:
             metadata.apply(
                 MetadataWriteRequest(
@@ -582,7 +763,7 @@ def confirm_review_blocked(
             "review_confirm",
             extra={
                 "audit": {
-                    "event": "review_confirm",
+                    "event": "review_confirm" if not already_blocked else "blocked_add_faces",
                     "asset_id": asset_id,
                     "path": str(source_path),
                     "assignments": [

@@ -173,9 +173,9 @@ class CollectSettings:
     >= ``match_threshold_collect`` into ``<people_root>/<person_name>/``
     (unless ``--collect-to`` overrides the root). ``None`` disables collection.
 
-    ``match_threshold_collect`` is intentionally below ``match_threshold_strong``
-    (and a bit above ``match_threshold_review``) so collect catches more of the
-    faces that flagged/review already finds, without changing GDPR decisions.
+    ``match_threshold_collect`` is typically near ``match_threshold_strong``
+    (and above ``match_threshold_review``) so collect pulls confident matches
+    into people folders without changing GDPR decisions on its own.
     """
 
     people_root: Path | None

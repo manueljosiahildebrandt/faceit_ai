@@ -12,7 +12,89 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from faceit_ai.logging_setup import PHASE_CHECK, log_export_audit, log_run_phase
-from faceit_ai.persistence.models import Asset, AssetDecision
+from faceit_ai.persistence.models import Asset, AssetDecision, CollectedPhoto
+from faceit_ai.services.processing_runs import folder_claim_key
+
+
+def _path_variants(path: Path | str) -> list[str]:
+    """String forms to match ``Asset.path`` / ``CollectedPhoto.source_path`` after resolve."""
+    text = str(path)
+    out: list[str] = [text]
+    try:
+        out.append(str(Path(path).expanduser().resolve()))
+    except OSError:
+        pass
+    # Dedupe while preserving order.
+    return list(dict.fromkeys(out))
+
+
+def repoint_asset_path_after_move(
+    session: Session,
+    *,
+    old_paths: list[Path | str],
+    new_path: Path | str,
+    logger: logging.Logger | None = None,
+) -> bool:
+    """Point ``Asset.path`` (and matching ``CollectedPhoto.source_path``) at the post-move location.
+
+    Called when flagged export ``action=move`` succeeds so later collect / gallery source
+    links use the new path under ``flagged/…``, not the vacated original.
+    """
+    log = logger or logging.getLogger("faceit_ai")
+    try:
+        new_resolved = str(Path(new_path).expanduser().resolve())
+    except OSError:
+        new_resolved = str(new_path)
+
+    old_variants = []
+    for p in old_paths:
+        old_variants.extend(_path_variants(p))
+    old_variants = list(dict.fromkeys(old_variants))
+    if not old_variants:
+        return False
+
+    asset: Asset | None = None
+    for old in old_variants:
+        asset = session.scalar(select(Asset).where(Asset.path == old))
+        if asset is not None:
+            break
+    if asset is None:
+        # Cross-OS / spelling mismatch: match by claim key + basename.
+        old_keys = {folder_claim_key(o) for o in old_variants}
+        name = Path(old_variants[0]).name
+        if name:
+            for row in session.execute(
+                select(Asset).where(Asset.path.endswith(name))
+            ).scalars():
+                if folder_claim_key(row.path) in old_keys:
+                    asset = row
+                    break
+
+    updated = False
+    if asset is not None and asset.path != new_resolved:
+        clash = session.scalar(select(Asset).where(Asset.path == new_resolved))
+        if clash is not None and int(clash.id) != int(asset.id):
+            log.warning(
+                "export move: cannot repoint asset %s → %s (path already used by asset %s)",
+                asset.path,
+                new_resolved,
+                clash.id,
+            )
+        else:
+            asset.path = new_resolved
+            updated = True
+
+    for old in old_variants:
+        for row in session.scalars(
+            select(CollectedPhoto).where(CollectedPhoto.source_path == old)
+        ).all():
+            if row.source_path != new_resolved:
+                row.source_path = new_resolved
+                updated = True
+
+    if updated:
+        session.flush()
+    return updated
 
 
 def _already_in_tiered_export_tree(src: Path, flagged_base: Path) -> bool:
@@ -188,6 +270,12 @@ def export_flagged_under_folder(
                 shutil.copy2(source_file, dest)
             else:
                 shutil.move(str(source_file), str(dest))
+                repoint_asset_path_after_move(
+                    session,
+                    old_paths=[src, source_file],
+                    new_path=dest,
+                    logger=log,
+                )
             n_ok += 1
             if audit is not None:
                 log_export_audit(
@@ -264,6 +352,12 @@ def export_single_flagged_asset(
                     shutil.copy2(source_file, dest)
                 else:
                     shutil.move(str(source_file), str(dest))
+                    repoint_asset_path_after_move(
+                        session,
+                        old_paths=[src_res, source_file],
+                        new_path=dest,
+                        logger=log,
+                    )
                 if audit is not None:
                     log_export_audit(
                         audit,
@@ -299,6 +393,12 @@ def export_single_flagged_asset(
             shutil.copy2(source_file, dest)
         else:
             shutil.move(str(source_file), str(dest))
+            repoint_asset_path_after_move(
+                session,
+                old_paths=[src_res, source_file],
+                new_path=dest,
+                logger=log,
+            )
         if audit is not None:
             log_export_audit(
                 audit,

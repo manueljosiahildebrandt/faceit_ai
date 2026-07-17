@@ -16,6 +16,7 @@ from faceit_ai.persistence.models import (
     Asset,
     AssetDecision,
     AssetFace,
+    CollectedPhoto,
     Consent,
     FaceEmbedding,
     Person,
@@ -23,7 +24,15 @@ from faceit_ai.persistence.models import (
 from faceit_ai.persistence.session import init_db
 
 # FK-safe insertion order. processing_run is runtime-only and intentionally not migrated.
-_MODELS_IN_ORDER = [Person, Consent, FaceEmbedding, Asset, AssetFace, AssetDecision]
+_MODELS_IN_ORDER = [
+    Person,
+    Consent,
+    FaceEmbedding,
+    Asset,
+    AssetFace,
+    AssetDecision,
+    CollectedPhoto,
+]
 
 
 def _sqlite_url_for(source: Path) -> str:

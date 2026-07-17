@@ -129,6 +129,25 @@ class AssetDecision(Base):
     asset: Mapped["Asset"] = relationship(back_populates="decision")
 
 
+class CollectedPhoto(Base):
+    """Link from a people-folder collected file back to its original shoot asset/path."""
+
+    __tablename__ = "collected_photo"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    # Cross-OS stable key (folder_claim_key) of the people-folder destination file.
+    collected_key: Mapped[str] = mapped_column(Text, nullable=False, unique=True, index=True)
+    collected_path: Mapped[str] = mapped_column(Text, nullable=False)
+    source_path: Mapped[str] = mapped_column(Text, nullable=False)
+    asset_id: Mapped[int | None] = mapped_column(ForeignKey("asset.id"), nullable=True, index=True)
+    person_id: Mapped[int | None] = mapped_column(ForeignKey("person.id"), nullable=True, index=True)
+    # Analyze match score (same units as matching thresholds), when known at collect time.
+    match_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class ProcessingRun(Base):
     """A folder-analysis claim/heartbeat so several PCs can coordinate on one shared DB.
 

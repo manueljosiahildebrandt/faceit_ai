@@ -30,6 +30,14 @@ if errorlevel 1 (
   python -m pip install -e ".[postgres]"
 )
 
+REM Windows GPU: onnxruntime-directml (DirectML). Stock onnxruntime is CPU-only and conflicts.
+python -c "import onnxruntime as ort; raise SystemExit(0 if 'DmlExecutionProvider' in ort.get_available_providers() else 1)" >nul 2>&1
+if errorlevel 1 (
+  echo Enabling Windows GPU via DirectML (one-time^)...
+  python -m pip uninstall -y onnxruntime onnxruntime-gpu >nul 2>&1
+  python -m pip install "onnxruntime-directml>=1.17"
+)
+
 if not exist "config\default.yaml" (
   if exist "config\default.example.yaml" (
     copy /Y "config\default.example.yaml" "config\default.yaml" >nul

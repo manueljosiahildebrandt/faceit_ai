@@ -4,9 +4,10 @@ from __future__ import annotations
 
 # CoreML is intentionally omitted: InsightFace SCRFD (buffalo_l det_10g) hits a
 # known ONNX Runtime CoreML shape-rank mismatch at detect time and aborts the run.
-# Prefer CUDA when present; otherwise CPU is reliable on Apple Silicon too.
+# Preference: NVIDIA CUDA when present, else Windows DirectML (any DX12 GPU), else CPU.
 _PREFERENCE = (
     "CUDAExecutionProvider",
+    "DmlExecutionProvider",
     "CPUExecutionProvider",
 )
 
@@ -45,7 +46,7 @@ def device_kind(providers: tuple[str, ...] | list[str]) -> str:
 def resolve_onnx_providers(requested: tuple[str, ...] | list[str]) -> tuple[str, ...]:
     """Map YAML ``providers`` to a usable ONNX Runtime provider list.
 
-    - ``auto`` (or empty) picks CUDA when available, else CPU.
+    - ``auto`` (or empty) picks CUDA, then DirectML, else CPU.
       CoreML is skipped (incompatible with InsightFace SCRFD dynamic shapes).
     - Explicit names are kept when available; CoreML is dropped with a warning;
       falls back to CPU if nothing usable remains.

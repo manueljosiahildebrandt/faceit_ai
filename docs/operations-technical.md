@@ -174,8 +174,8 @@ Per face, after picking the best gallery cosine (score = cosine × scale, defaul
 | Condition | Matcher result |
 |-----------|----------------|
 | scaled score \< review threshold (default **200**) | unknown (`person_id` null) |
-| review ≤ scaled \< strong (default **200–295**) | uncertain (identity kept) |
-| scaled ≥ strong (default **295**) | strong match |
+| review ≤ scaled \< strong (default **200–230**) | uncertain (identity kept) |
+| scaled ≥ strong (default **230**) | strong match |
 
 **Image aggregation** (`src/faceit_ai/decision/engine.py`) — precedence:
 

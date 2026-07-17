@@ -14,7 +14,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
 from faceit_ai.persistence.models import Base
-from faceit_ai.persistence.schema_upgrade import upgrade_person_profile_columns
+from faceit_ai.persistence.schema_upgrade import upgrade_schema
 
 # One engine per URL per process. Opening a new engine (and pool) on every UI action
 # is wasteful and, for Postgres, needlessly churns connections.
@@ -65,7 +65,7 @@ def init_db(database_url: str) -> Engine:
     """Create all tables for the configured database (idempotent)."""
     engine = _build_engine(database_url)
     Base.metadata.create_all(engine, checkfirst=True)
-    upgrade_person_profile_columns(engine)
+    upgrade_schema(engine)
     return engine
 
 
@@ -82,7 +82,7 @@ def create_engine_and_session_factory(database_url: str) -> tuple[Engine, sessio
 
     engine = _build_engine(database_url)
     Base.metadata.create_all(engine, checkfirst=True)
-    upgrade_person_profile_columns(engine)
+    upgrade_schema(engine)
     factory = sessionmaker(engine, expire_on_commit=False, future=True)
 
     if not _is_memory_sqlite(database_url):

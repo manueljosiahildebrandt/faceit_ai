@@ -53,7 +53,7 @@ pipeline:
 
 matching:
   match_score_scale: 512
-  match_threshold_strong: 295
+  match_threshold_strong: 230
   match_threshold_review: 200
 
 decision:
@@ -88,7 +88,7 @@ collect:
   crop_portrait: true
   crop_aspect: "3:4"
   crop_padding: 1.5
-  # A bit above match_threshold_review (200); below match_threshold_strong (295).
+  # A bit above match_threshold_review (200); near match_threshold_strong (230).
   match_threshold_collect: 240
   output_format: jpg
 

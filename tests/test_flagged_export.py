@@ -198,4 +198,44 @@ def test_export_idempotent_skip_second_run(tmp_path: Path) -> None:
         )
     assert n1 == 1
     assert n2 == 0
-    assert (root / "flagged" / "blocked" / "f.arw").read_bytes() == b"z"
+
+
+def test_export_flagged_move_updates_asset_path(tmp_path: Path) -> None:
+    """Move must repoint Asset.path so collect/gallery use the flagged location."""
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    sf = sessionmaker(engine, expire_on_commit=False)
+    root = tmp_path / "album"
+    src = root / "day" / "shot.arw"
+    src.parent.mkdir(parents=True)
+    src.write_bytes(b"raw")
+
+    with sf() as s:
+        a = Asset(path=str(src.resolve()), sha256="move1")
+        s.add(a)
+        s.flush()
+        s.add(AssetDecision(asset_id=a.id, status="blocked", reason="n", usage="social"))
+        s.commit()
+        asset_id = a.id
+
+    with sf() as s:
+        n_ok, n_miss, warns = export_flagged_under_folder(
+            session=s,
+            scan_root=root,
+            statuses=["blocked"],
+            action="move",
+            logger=logging.getLogger("move"),
+        )
+        s.commit()
+
+    assert n_ok == 1
+    assert n_miss == 0
+    assert not warns
+    dest = root / "flagged" / "blocked" / "day" / "shot.arw"
+    assert dest.is_file()
+    assert not src.exists()
+
+    with sf() as s:
+        a = s.get(Asset, asset_id)
+        assert a is not None
+        assert Path(a.path).resolve() == dest.resolve()

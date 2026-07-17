@@ -48,7 +48,13 @@ from faceit_ai.services.person_profile import (
     tags_from_json,
     write_person_json,
 )
-from faceit_ai.services.processing_runs import list_active_runs, release_folder_claims, this_host
+from faceit_ai.services.processing_runs import (
+    asset_path_in_folder,
+    folder_path_prefixes,
+    list_active_runs,
+    release_folder_claims,
+    this_host,
+)
 from faceit_ai.services.redecide_and_sync_person import run_redecide_and_sync_person
 from faceit_ai.services.review_confirm import (
     FaceAssignment,
@@ -60,6 +66,7 @@ from faceit_ai.services.review_confirm import (
     list_review_assets_json,
     load_review_asset_detail,
     render_review_preview_jpeg,
+    save_review_face_assignments,
 )
 from faceit_ai.settings import load_settings, parse_raw_decode_size, resolve_config_path
 from faceit_ai.vision.image_loader import list_scannable_image_paths
@@ -293,19 +300,26 @@ class AppState:
                 self.progress_line = "Stopped."
             else:
                 self.progress_line = _finalize_progress_line(self.progress_line, success=success)
-            scope = (self.run_scope_type, self.run_scope_value)
+            scope_type = self.run_scope_type
+            scope_value = self.run_scope_value
+            # Folder analyze: never lose the path we just processed.
+            if scope_type == "folder" and not (scope_value or "").strip():
+                scope_value = self.analyze_folder_last
+            if not scope_type and (self.analyze_folder_last or "").strip():
+                scope_type = "folder"
+                scope_value = self.analyze_folder_last
             self.run_scope_type = None
             self.run_scope_value = ""
 
-        if scope[0]:
+        if scope_type:
             try:
-                counts = _compute_outcome_counts(scope[0], scope[1])
+                counts = _compute_outcome_counts(scope_type, scope_value)
                 with self.lock:
                     self.status_counts = counts
                     self.status_counts_ready = True
-            except Exception:
+            except Exception as e:
                 # Summary is best-effort; UI must not crash on query failures.
-                pass
+                self.add_log(f"[warn] could not fill Current Status counts: {e}")
 
     def compute_status_counts_if_possible(self) -> None:
         """Deprecated name: use refresh_status_counts_final for end-of-analysis refresh."""
@@ -413,8 +427,16 @@ STATE = AppState()
 
 
 def _cli_path(name: str) -> str:
-    local = Path.cwd() / ".venv" / "bin" / name
-    return str(local) if local.is_file() else name
+    cwd = Path.cwd()
+    # Unix editable install; Windows venv uses Scripts\name.exe
+    for candidate in (
+        cwd / ".venv" / "bin" / name,
+        cwd / ".venv" / "Scripts" / f"{name}.exe",
+        cwd / ".venv" / "Scripts" / name,
+    ):
+        if candidate.is_file():
+            return str(candidate)
+    return name
 
 
 def _pick_folder_via_osascript(prompt: str) -> str:
@@ -457,8 +479,95 @@ def _windows_com_release(ptr: object) -> None:
     release(ptr)
 
 
-def _pick_folder_via_windows_explorer(prompt: str) -> str:
-    """Modern Explorer-style folder dialog (IFileOpenDialog + FOS_PICKFOLDERS)."""
+def _windows_is_cancel(hr: int) -> bool:
+    """True for dialog cancel / close (HRESULT may be signed on Windows)."""
+    return (hr & 0xFFFFFFFF) == 0x800704C7
+
+
+def _windows_foreground_owner() -> tuple[object, object]:
+    """Create a tiny topmost owner window so the file dialog appears above the browser."""
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
+
+    class WNDCLASSW(ctypes.Structure):
+        _fields_ = [
+            ("style", ctypes.c_uint),
+            ("lpfnWndProc", ctypes.c_void_p),
+            ("cbClsExtra", ctypes.c_int),
+            ("cbWndExtra", ctypes.c_int),
+            ("hInstance", wintypes.HINSTANCE),
+            ("hIcon", wintypes.HICON),
+            ("hCursor", wintypes.HCURSOR),
+            ("hbrBackground", wintypes.HBRUSH),
+            ("lpszMenuName", wintypes.LPCWSTR),
+            ("lpszClassName", wintypes.LPCWSTR),
+        ]
+
+    class_name = "FaceitAiFolderPickerOwner"
+    hinst = kernel32.GetModuleHandleW(None)
+    wndproc = ctypes.windll.user32.DefWindowProcW
+    wc = WNDCLASSW()
+    wc.style = 0
+    wc.lpfnWndProc = ctypes.cast(wndproc, ctypes.c_void_p).value
+    wc.cbClsExtra = 0
+    wc.cbWndExtra = 0
+    wc.hInstance = hinst
+    wc.hIcon = None
+    wc.hCursor = None
+    wc.hbrBackground = None
+    wc.lpszMenuName = None
+    wc.lpszClassName = class_name
+    atom = user32.RegisterClassW(ctypes.byref(wc))
+    # Ignore "already registered" (error 1410).
+    if not atom and ctypes.GetLastError() not in (0, 1410):
+        raise OSError(f"RegisterClassW failed: {ctypes.GetLastError()}")
+
+    # WS_EX_TOPMOST | WS_EX_TOOLWINDOW
+    ex_style = 0x00000008 | 0x00000080
+    # WS_POPUP
+    style = 0x80000000
+    hwnd = user32.CreateWindowExW(
+        ex_style,
+        class_name,
+        "Faceit AI",
+        style,
+        0,
+        0,
+        0,
+        0,
+        None,
+        None,
+        hinst,
+        None,
+    )
+    if not hwnd:
+        raise OSError(f"CreateWindowExW failed: {ctypes.GetLastError()}")
+
+    # Steal focus from the browser so Show() is owned by a foreground window.
+    user32.AllowSetForegroundWindow(-1)
+    fg = user32.GetForegroundWindow()
+    fg_thread = user32.GetWindowThreadProcessId(fg, None) if fg else 0
+    cur_thread = kernel32.GetCurrentThreadId()
+    if fg_thread and fg_thread != cur_thread:
+        user32.AttachThreadInput(cur_thread, fg_thread, True)
+    user32.ShowWindow(hwnd, 5)  # SW_SHOW
+    user32.SetForegroundWindow(hwnd)
+    user32.BringWindowToTop(hwnd)
+    if fg_thread and fg_thread != cur_thread:
+        user32.AttachThreadInput(cur_thread, fg_thread, False)
+    return hwnd, user32
+
+
+def _pick_folder_via_windows_dialog(prompt: str, *, mode: str = "dir") -> str:
+    """Modern Windows dialog.
+
+    mode=dir  — folder picker (FOS_PICKFOLDERS).
+    mode=media — open-file dialog showing images; returns the parent folder so photos
+                 are visible while choosing an analyze folder.
+    """
     import ctypes
     from ctypes import wintypes
 
@@ -468,14 +577,20 @@ def _pick_folder_via_windows_explorer(prompt: str) -> str:
     fos_pickfolders = 0x00000020
     fos_forcefilesystem = 0x00000040
     fos_nochagedir = 0x00000008
+    fos_pathmustexist = 0x00000800
+    fos_filemustexist = 0x00001000
     sigdn_filesystem = 0x80058000
-    # HRESULT_FROM_WIN32(ERROR_CANCELLED)
-    hresult_cancelled = 0x800704C7
+
+    class COMDLG_FILTERSPEC(ctypes.Structure):
+        _fields_ = [("pszName", wintypes.LPCWSTR), ("pszSpec", wintypes.LPCWSTR)]
 
     ole32 = ctypes.windll.ole32
     ole32.CoInitialize(None)
     dialog = ctypes.c_void_p()
+    owner = None
+    user32 = None
     try:
+        owner, user32 = _windows_foreground_owner()
         hr = ole32.CoCreateInstance(
             ctypes.byref(clsid_file_open),
             None,
@@ -499,10 +614,29 @@ def _pick_folder_via_windows_explorer(prompt: str) -> str:
         )(vtable[9])
         opts = ctypes.c_uint(0)
         get_options(dialog, ctypes.byref(opts))
-        set_options(
-            dialog,
-            opts.value | fos_pickfolders | fos_forcefilesystem | fos_nochagedir,
-        )
+        if mode == "media":
+            set_options(
+                dialog,
+                (opts.value | fos_forcefilesystem | fos_nochagedir | fos_pathmustexist | fos_filemustexist)
+                & ~fos_pickfolders,
+            )
+            # SetFileTypes — vtable index 4
+            filters = (COMDLG_FILTERSPEC * 2)(
+                COMDLG_FILTERSPEC(
+                    "Photos",
+                    "*.jpg;*.jpeg;*.png;*.webp;*.tif;*.tiff;*.heic;*.dng;*.arw;*.cr2;*.cr3;*.nef;*.nrw;*.orf;*.raf;*.rw2;*.pef;*.srw",
+                ),
+                COMDLG_FILTERSPEC("All files", "*.*"),
+            )
+            set_file_types = ctypes.WINFUNCTYPE(
+                ctypes.HRESULT, ctypes.c_void_p, ctypes.c_uint, ctypes.c_void_p
+            )(vtable[4])
+            set_file_types(dialog, 2, ctypes.cast(filters, ctypes.c_void_p))
+        else:
+            set_options(
+                dialog,
+                opts.value | fos_pickfolders | fos_forcefilesystem | fos_nochagedir | fos_pathmustexist,
+            )
 
         if prompt:
             set_title = ctypes.WINFUNCTYPE(
@@ -513,8 +647,8 @@ def _pick_folder_via_windows_explorer(prompt: str) -> str:
         show = ctypes.WINFUNCTYPE(
             ctypes.HRESULT, ctypes.c_void_p, wintypes.HWND
         )(vtable[3])
-        hr = show(dialog, None)
-        if hr == hresult_cancelled or hr != 0:
+        hr = show(dialog, owner)
+        if _windows_is_cancel(hr) or hr != 0:
             raise subprocess.CalledProcessError(1, "windows-folder-picker")
 
         get_result = ctypes.WINFUNCTYPE(
@@ -538,11 +672,14 @@ def _pick_folder_via_windows_explorer(prompt: str) -> str:
             path_ptr = wintypes.LPWSTR()
             hr = get_display_name(item, sigdn_filesystem, ctypes.byref(path_ptr))
             if hr != 0 or not path_ptr:
-                raise OSError(f"GetDisplayName failed: 0x{hr & 0xFFFFFFFF:08X}")
+                raise subprocess.CalledProcessError(1, "windows-folder-picker")
             path = path_ptr.value
             ole32.CoTaskMemFree(path_ptr)
             if not path:
                 raise subprocess.CalledProcessError(1, "windows-folder-picker")
+            if mode == "media":
+                # Selected a photo → use its containing folder.
+                return str(Path(path).expanduser().resolve().parent)
             return str(path)
         finally:
             _windows_com_release(item)
@@ -552,32 +689,15 @@ def _pick_folder_via_windows_explorer(prompt: str) -> str:
                 _windows_com_release(dialog)
             except Exception:
                 pass
+        if owner and user32 is not None:
+            try:
+                user32.DestroyWindow(owner)
+            except Exception:
+                pass
         try:
             ole32.CoUninitialize()
         except Exception:
             pass
-
-
-def _pick_folder_via_powershell(prompt: str) -> str:
-    """Legacy fallback: old tree-style FolderBrowserDialog."""
-    safe = prompt.replace("'", "''")
-    script = (
-        "Add-Type -AssemblyName System.Windows.Forms; "
-        "$f = New-Object System.Windows.Forms.FolderBrowserDialog; "
-        f"$f.Description = '{safe}'; "
-        "$f.ShowNewFolderButton = $true; "
-        "if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { "
-        "Write-Output $f.SelectedPath "
-        "} else { exit 1 }"
-    )
-    out = subprocess.check_output(
-        ["powershell", "-NoProfile", "-STA", "-Command", script],
-        text=True,
-        stderr=subprocess.STDOUT,
-    ).strip()
-    if not out:
-        raise subprocess.CalledProcessError(1, "powershell")
-    return out
 
 
 def _pick_folder_via_zenity(prompt: str) -> str:
@@ -604,23 +724,26 @@ def _pick_folder_via_tk(prompt: str) -> str:
     return str(path)
 
 
-def _pick_folder(*, lang: str = DEFAULT_LANG) -> str:
+_WINDOWS_MEDIA_PICK_TARGETS = frozenset(
+    {"search_folder", "review_folder", "ingest_destination"}
+)
+
+
+def _pick_folder(*, lang: str = DEFAULT_LANG, target: str = "") -> str:
     """Native folder dialog on the machine running the web server (local UI)."""
-    prompt = _t("osascript.pick_folder", lang)
     system = platform.system()
+    mode = "media" if target in _WINDOWS_MEDIA_PICK_TARGETS else "dir"
+    if mode == "media":
+        prompt = _t("picker.media_folder", lang)
+    else:
+        prompt = _t("osascript.pick_folder", lang)
     if system == "Darwin":
-        return _pick_folder_via_osascript(prompt)
+        return _pick_folder_via_osascript(
+            prompt if mode == "dir" else _t("osascript.pick_folder", lang)
+        )
     if system == "Windows":
-        try:
-            return _pick_folder_via_windows_explorer(prompt)
-        except subprocess.CalledProcessError:
-            raise
-        except Exception as e:
-            logging.getLogger("faceit_ai").warning(
-                "modern Windows folder picker failed (%s); falling back to legacy dialog",
-                e,
-            )
-            return _pick_folder_via_powershell(prompt)
+        # No legacy FolderBrowserDialog fallback — cancel must stay cancel.
+        return _pick_folder_via_windows_dialog(prompt, mode=mode)
     # Linux / other: prefer zenity, then tkinter.
     try:
         return _pick_folder_via_zenity(prompt)
@@ -644,7 +767,8 @@ _RE_SYNC_COUNTS = re.compile(
 
 
 def _map_line_to_user_state(line: str) -> None:
-    text = line.strip()
+    # Drop ANSI color codes (rare when piped, but harmless).
+    text = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
     low = text.lower()
     if not text:
         return
@@ -674,9 +798,8 @@ def _map_line_to_user_state(line: str) -> None:
         return
     if "sync_metadata" in low and "done:" in low:
         STATE.set_stage("Writing metadata")
-    snap = STATE.snapshot()
-    if not snap.get("running"):
-        return
+
+    # Summary counters: parse even if finish_run already flipped running=False (Windows flush race).
     m_listed = _RE_SCAN_LISTED.search(text)
     if m_listed:
         n = int(m_listed.group("v"))
@@ -1379,27 +1502,47 @@ def _scan_people_plan_and_start(root_text: str, *, lang: str = DEFAULT_LANG) -> 
 def _compute_outcome_counts(scope_type: str, scope_value: str) -> dict[str, int]:
     """Count AssetDecision outcomes in the DB, scoped to the run.
 
-    - folder: counts decisions for Asset.path starting with the folder path
+    - folder: counts decisions for assets under the folder (Mac/Windows/UNC path-safe)
     - person: counts decisions for assets that have stored faces matched to this person
     """
+    from sqlalchemy import or_
+
     settings = load_settings()
     _, session_factory = create_engine_and_session_factory(settings.database_url)
     out = {"blocked": 0, "review": 0, "ok": 0}
 
     with session_scope(session_factory) as session:
         if scope_type == "folder":
-            root = str(Path(scope_value).expanduser().resolve())
-            stmt = (
-                select(AssetDecision.status, func.count(AssetDecision.asset_id))
-                .join(Asset, AssetDecision.asset_id == Asset.id)
-                .where(Asset.path.startswith(root))
-                .group_by(AssetDecision.status)
+            folder = (scope_value or "").strip()
+            if not folder:
+                return out
+
+            base = select(Asset.path, AssetDecision.status).join(
+                Asset, AssetDecision.asset_id == Asset.id
             )
-            rows = session.execute(stmt).all()
-            for st, cnt in rows:
-                key = str(st).lower()
-                if key in out:
-                    out[key] = int(cnt or 0)
+
+            def _count_rows(candidates: list[tuple[str, str]]) -> int:
+                n = 0
+                for path_str, st in candidates:
+                    if not asset_path_in_folder(path_str, folder):
+                        continue
+                    key = st.lower()
+                    if key in out:
+                        out[key] += 1
+                        n += 1
+                return n
+
+            prefixes = folder_path_prefixes(folder)
+            matched = 0
+            if prefixes:
+                stmt = base.where(or_(*[Asset.path.startswith(p) for p in prefixes]))
+                matched = _count_rows(
+                    [(str(p), str(st)) for p, st in session.execute(stmt).all()]
+                )
+            # Cross-OS shared DB: Windows folder vs Mac-stored paths → SQL miss.
+            if matched == 0:
+                out = {"blocked": 0, "review": 0, "ok": 0}
+                _count_rows([(str(p), str(st)) for p, st in session.execute(base).all()])
             return out
 
         if scope_type == "person":
@@ -1555,6 +1698,81 @@ def _multipart_uploads(fs: MultipartForm, field: str) -> list[object]:
     if getattr(raw, "filename", None):
         return [raw]
     return []
+
+
+def _ensure_person_folder_request(
+    name: str,
+    display_name: str = "",
+    *,
+    lang: str = DEFAULT_LANG,
+) -> dict[str, object]:
+    """Create people_root/<slug>/ + person.json if missing (Review: add detected person)."""
+    root = _resolved_people_root()
+    if root is None:
+        return {"ok": False, "error": _t("api.people_not_configured", lang)}
+    slug = (name or "").strip()
+    if not slug or slug in (".", "..") or "/" in slug or "\\" in slug:
+        return {"ok": False, "error": _t("api.invalid_person_name", lang, name=name)}
+
+    existing = existing_person_folder(root, slug)
+    if existing is not None:
+        folder = root / existing
+        profile = profile_for_folder(folder, existing)
+        return {
+            "ok": True,
+            "slug": existing,
+            "display_name": profile.display_name or display_name_from_slug(existing),
+            "created": False,
+        }
+
+    settings = load_settings()
+    _, session_factory = create_engine_and_session_factory(settings.database_url)
+    first = ""
+    last = ""
+    display = (display_name or "").strip()
+    with session_scope(session_factory) as session:
+        person = session.scalar(select(Person).where(Person.name == slug))
+        if person is not None:
+            first = (person.first_name or "").strip()
+            last = (person.last_name or "").strip()
+            if not display:
+                display = (person.display_name or "").strip()
+
+    if not first and not last and "_" in slug:
+        # Legacy slug nachname_vorname
+        last_part, _, first_part = slug.partition("_")
+        last = last_part.replace("-", " ").strip()
+        first = first_part.replace("-", " ").strip()
+    if not display:
+        display = default_display_name(first, last) or display_name_from_slug(slug)
+
+    folder = root / slug
+    profile = PersonProfile(
+        first_name=first,
+        last_name=last,
+        display_name=display,
+        tags=[],
+    )
+    write_person_json(folder, profile)
+    with session_scope(session_factory) as session:
+        repo = ConsentRepository(session)
+        person = repo.upsert_person_with_consent(
+            name=slug,
+            consent_given=False,
+            usage_social=True,
+            usage_web=True,
+            usage_internal=True,
+            usage_print=True,
+        )
+        apply_profile_to_person(person, profile)
+        sync_person_profile_to_db(session, folder_name=slug, folder=folder)
+    return {
+        "ok": True,
+        "slug": slug,
+        "display_name": profile.display_name,
+        "created": True,
+        "message": _t("api.ensure_folder_ok", lang, display=profile.display_name, slug=slug),
+    }
 
 
 def _create_person_request(fs: MultipartForm, *, lang: str = DEFAULT_LANG) -> dict[str, object]:
@@ -2346,6 +2564,15 @@ def _delete_person_gallery_file(name: str, path_text: str, *, lang: str = DEFAUL
         file_path.unlink()
     except OSError as e:
         return {"ok": False, "error": f"Could not delete file: {e}"}
+    try:
+        from faceit_ai.services.collected_photos import delete_collected_photo
+
+        settings = load_settings()
+        _, session_factory = create_engine_and_session_factory(settings.database_url)
+        with session_scope(session_factory) as session:
+            delete_collected_photo(session, file_path)
+    except Exception as e:
+        STATE.add_log(f"[warn] could not remove collected_photo link: {e}")
     return {"ok": True, "message": _t("api.gallery_deleted", lang, file=file_path.name, name=name)}
 
 
@@ -2429,6 +2656,7 @@ def _review_photo_detail(
         )
     if detail is None:
         return {"ok": False, "error": _t("api.photo_not_found", lang)}
+    folder_slugs = {e["slug"] for e in _list_people_for_review()}
     return {
         "ok": True,
         "asset_id": detail.asset_id,
@@ -2449,6 +2677,9 @@ def _review_photo_detail(
                 "bbox": f.bbox,
                 "person_name": f.person_name,
                 "match_score": f.match_score,
+                "in_people_folder": bool(
+                    f.person_name and str(f.person_name).strip() in folder_slugs
+                ),
             }
             for f in detail.faces
         ],
@@ -2479,11 +2710,88 @@ def _parse_face_assignments(raw: str) -> list[FaceAssignment] | None:
     return out
 
 
+def _parse_face_assignment_updates(raw: str) -> list[FaceAssignment] | None:
+    """Like ``_parse_face_assignments`` but allows empty person_name (clear/Unknown)."""
+    try:
+        data = json.loads(raw or "[]")
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, list) or not data:
+        return None
+    out: list[FaceAssignment] = []
+    for item in data:
+        if not isinstance(item, dict):
+            return None
+        face_id = item.get("face_id")
+        person_name = str(item.get("person_name", "")).strip()
+        if not isinstance(face_id, int) and not (
+            isinstance(face_id, str) and str(face_id).isdigit()
+        ):
+            return None
+        out.append(FaceAssignment(face_id=int(face_id), person_name=person_name))
+    return out
+
+
+def _save_review_face_assignments_request(
+    asset_id: int,
+    folder_text: str,
+    faces_json: str,
+    status: str = "review",
+    *,
+    lang: str = DEFAULT_LANG,
+) -> dict[str, object]:
+    folder = _safe_review_folder(folder_text)
+    if folder is None:
+        return {"ok": False, "error": _t("api.invalid_folder", lang)}
+    if asset_id <= 0:
+        return {"ok": False, "error": _t("api.invalid_asset", lang)}
+    assignments = _parse_face_assignment_updates(faces_json)
+    if not assignments:
+        return {"ok": False, "error": _t("api.invalid_faces", lang)}
+
+    for a in assignments:
+        n = a.person_name.strip()
+        if n and (n in (".", "..") or "/" in n or "\\" in n):
+            return {"ok": False, "error": _t("api.invalid_person_name", lang, name=a.person_name)}
+
+    want = _parse_review_status(status)
+    settings = load_settings()
+    people_root = _resolved_people_root()
+    _, session_factory = create_engine_and_session_factory(settings.database_url)
+    audit = logging.getLogger("faceit_ai.audit")
+    try:
+        with session_scope(session_factory) as session:
+            result = save_review_face_assignments(
+                session=session,
+                asset_id=asset_id,
+                folder=folder,
+                face_assignments=assignments,
+                image_cfg=settings.pipeline.image,
+                status=want,  # type: ignore[arg-type]
+                settings=settings,
+                people_root=people_root,
+                audit=audit,
+            )
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+    except Exception as e:
+        logging.getLogger("faceit_ai").exception("save face assignments failed")
+        return {"ok": False, "error": str(e)}
+
+    return {
+        "ok": True,
+        "updated": result.updated,
+        "crops_written": result.crops_written,
+        "embeddings_added": result.embeddings_added,
+    }
+
+
 def _confirm_review_blocked_request(
     asset_id: int,
     folder_text: str,
     faces_json: str,
     *,
+    status: str = "review",
     lang: str = DEFAULT_LANG,
 ) -> dict[str, object]:
     folder = _safe_review_folder(folder_text)
@@ -2504,6 +2812,7 @@ def _confirm_review_blocked_request(
     if people_root is None:
         return {"ok": False, "error": _t("api.people_not_configured", lang)}
 
+    want = _parse_review_status(status)
     settings = load_settings()
     _, session_factory = create_engine_and_session_factory(settings.database_url)
     export_mode = settings.export.flagged
@@ -2528,6 +2837,7 @@ def _confirm_review_blocked_request(
                 metadata=metadata,
                 export_action=export_mode,  # type: ignore[arg-type]
                 audit=audit,
+                status=want,  # type: ignore[arg-type]
             )
     except ValueError as e:
         return {"ok": False, "error": str(e)}
@@ -2535,10 +2845,11 @@ def _confirm_review_blocked_request(
         logging.getLogger("faceit_ai").exception("review confirm failed")
         return {"ok": False, "error": str(e)}
 
+    msg_key = "api.add_faces_ok" if want == "blocked" else "api.blocked_ok"
     return {
         "ok": True,
         "message": _t(
-            "api.blocked_ok",
+            msg_key,
             lang,
             c=result.crops_written,
             e=result.embeddings_added,
@@ -3561,11 +3872,52 @@ a.person-link:hover { text-decoration: underline; }
   cursor: pointer; background: #0a0d13;
 }
 .gallery-grid img.gallery-thumb:hover { border-color: var(--accent); }
+.gallery-thumb-wrap {
+  position: relative;
+}
+.gallery-thumb-wrap img.gallery-thumb {
+  width: 100%; height: 140px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line);
+  cursor: pointer; background: #0a0d13; display: block;
+}
+.gallery-score-badge {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: rgba(10, 13, 19, 0.82);
+  color: var(--text);
+  border: 1px solid var(--line);
+  pointer-events: none;
+}
 .gallery-hero {
   margin-top: 12px; text-align: center;
 }
 .gallery-hero img {
   max-width: 100%; max-height: 55vh; border-radius: 10px; border: 1px solid var(--line);
+}
+.gallery-source {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+  word-break: break-word;
+  margin: 6px 0 8px;
+  line-height: 1.35;
+}
+.gallery-match {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+  margin: 0 0 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+.gallery-pos-row {
+  margin: 8px 0;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
 }
 .review-hero-wrap {
   position: relative; display: inline-block; max-width: 100%; margin-top: 12px;
@@ -3587,10 +3939,53 @@ a.person-link:hover { text-decoration: underline; }
   white-space: nowrap; max-width: 160px; overflow: hidden; text-overflow: ellipsis;
 }
 .review-face-row {
-  display: grid; grid-template-columns: 1fr 180px; gap: 10px; align-items: center;
-  padding: 8px 0; border-bottom: 1px solid var(--line);
+  display: grid; grid-template-columns: 1fr minmax(220px, 280px); gap: 10px; align-items: start;
+  padding: 10px 0; border-bottom: 1px solid var(--line);
 }
 .review-face-row.selected { background: rgba(245,158,11,.06); }
+.review-face-actions { display: flex; flex-direction: column; gap: 6px; }
+.person-picker {
+  position: relative; width: 100%;
+}
+.person-picker-toggle {
+  width: 100%; text-align: left; background: #12161f; border: 1px solid var(--line);
+  border-radius: 8px; padding: 8px 10px; color: var(--text); cursor: pointer; font-size: 13px;
+}
+.person-picker-toggle:hover { border-color: var(--accent); }
+.person-picker-panel {
+  position: absolute; z-index: 40; left: 0; right: 0; top: calc(100% + 4px);
+  background: #161b26; border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.45); max-height: 280px; display: flex; flex-direction: column;
+}
+.person-picker-panel[hidden] {
+  display: none !important;
+}
+.person-picker-search {
+  margin: 8px; width: calc(100% - 16px); box-sizing: border-box;
+  background: #0f131a; border: 1px solid var(--line); border-radius: 6px;
+  padding: 7px 9px; color: var(--text); font-size: 13px;
+}
+.person-picker-list {
+  overflow: auto; flex: 1; padding: 0 4px 4px;
+}
+.person-picker-item {
+  display: block; width: 100%; text-align: left; background: transparent; border: 0;
+  color: var(--text); padding: 7px 10px; border-radius: 6px; cursor: pointer; font-size: 13px;
+}
+.person-picker-item:hover, .person-picker-item.active { background: rgba(245,158,11,.12); }
+.person-picker-item .hint { color: var(--muted); font-size: 11px; margin-left: 6px; }
+.person-picker-footer {
+  border-top: 1px solid var(--line); padding: 6px;
+}
+.person-picker-footer button {
+  width: 100%; background: #1a2030; border: 1px solid var(--line); border-radius: 6px;
+  padding: 7px 10px; color: var(--text); cursor: pointer; font-size: 12px; font-weight: 600;
+}
+.btn-add-folder {
+  background: #1a2030; border: 1px solid var(--line); border-radius: 8px;
+  padding: 6px 10px; font-size: 12px; cursor: pointer; color: var(--text);
+}
+.btn-add-folder:hover { border-color: var(--accent); }
 .review-table tbody tr { cursor: pointer; }
 .review-table tbody tr:hover { background: rgba(255,255,255,.03); }
 .review-status-tabs {
@@ -3974,8 +4369,10 @@ function setLang(code) {{
             self._send_json(snap)
             return
         if parsed.path == "/api/pick_folder":
+            qs = parse_qs(parsed.query)
+            target = (qs.get("target", [""])[0] or "").strip()
             try:
-                picked = _pick_folder(lang=self._lang())
+                picked = _pick_folder(lang=self._lang(), target=target)
                 self._send_json({"ok": True, "path": picked})
             except subprocess.CalledProcessError as e:
                 self._send_json(
@@ -3993,19 +4390,46 @@ function setLang(code) {{
             qs = parse_qs(parsed.query)
             name = (qs.get("name", [""])[0] or "").strip()
             paths = _list_person_gallery_paths(name)
+            from faceit_ai.services.collected_photos import (
+                lookup_sources_by_collected_paths,
+                resolve_match_score_for_collected,
+            )
+            from faceit_ai.services.processing_runs import folder_claim_key
+
+            sources_by_key: dict = {}
+            scores_by_key: dict[str, float | None] = {}
+            try:
+                settings = load_settings()
+                _, session_factory = create_engine_and_session_factory(settings.database_url)
+                with session_scope(session_factory) as session:
+                    sources_by_key = lookup_sources_by_collected_paths(session, paths)
+                    for key, row in sources_by_key.items():
+                        scores_by_key[key] = resolve_match_score_for_collected(session, row)
+            except Exception as e:
+                STATE.add_log(f"[warn] could not load collected photo sources: {e}")
+
+            photos: list[dict[str, object]] = []
+            for p in paths:
+                key = folder_claim_key(p)
+                row = sources_by_key.get(key)
+                source_path = str(row.source_path) if row is not None else None
+                match_score = scores_by_key.get(key)
+                photos.append(
+                    {
+                        "path": str(p),
+                        "name": p.name,
+                        "url": "/api/person_photo?path=" + quote(str(p)),
+                        "source_path": source_path,
+                        "source_name": Path(source_path).name if source_path else None,
+                        "match_score": match_score,
+                    }
+                )
             self._send_json(
                 {
                     "ok": True,
                     "name": name,
-                    "count": len(paths),
-                    "photos": [
-                        {
-                            "path": str(p),
-                            "name": p.name,
-                            "url": "/api/person_photo?path=" + quote(str(p)),
-                        }
-                        for p in paths
-                    ],
+                    "count": len(photos),
+                    "photos": photos,
                 }
             )
             return
@@ -4203,7 +4627,7 @@ function setLang(code) {{
 </div>
 <script>
 async function pickFolder(targetId) {{
-  const r = await fetch('/api/pick_folder');
+  const r = await fetch('/api/pick_folder?target=' + encodeURIComponent(targetId || ''));
   const d = await r.json();
   if (!d.ok) {{
     alert(d.error || t('common.alert.picker_failed'));
@@ -4435,6 +4859,25 @@ async function stopServer() {{
   </div>
 </div>
 
+<div id="review_add_person_modal" class="modal-backdrop" onclick="if(event.target===this) closeReviewAddPersonModal()">
+  <div class="modal" style="max-width:480px;">
+    <button type="button" class="close-btn" onclick="closeReviewAddPersonModal()">{html.escape(_t("common.close", lang))}</button>
+    <h2>{html.escape(_t("review.person.add_title", lang))}</h2>
+    <form id="review_add_person_form" onsubmit="return submitReviewAddPerson(event)">
+      <div class="person-form-grid">
+        <div><label for="review_add_first">{html.escape(_t("people.label.vorname", lang))}</label><input id="review_add_first" required></div>
+        <div><label for="review_add_last">{html.escape(_t("people.label.nachname", lang))}</label><input id="review_add_last" required></div>
+        <div><label for="review_add_consent">{html.escape(_t("people.label.consent", lang))}</label>
+          <select id="review_add_consent"><option value="blocked" selected>{html.escape(_t("people.consent.blocked", lang))}</option><option value="allowed">{html.escape(_t("people.consent.allowed", lang))}</option></select>
+        </div>
+      </div>
+      <div style="margin-top:14px;display:flex;gap:8px;">
+        <button type="submit">{html.escape(_t("review.person.add_submit", lang))}</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <script>
 let reviewStatus = '{status_esc}';
 let reviewFolder = '';
@@ -4457,7 +4900,7 @@ function reviewKindLabel() {{
 }}
 
 async function pickFolder(targetId) {{
-  const r = await fetch('/api/pick_folder');
+  const r = await fetch('/api/pick_folder?target=' + encodeURIComponent(targetId || ''));
   const d = await r.json();
   if (!d.ok) {{
     alert(d.error || t('common.alert.picker_failed'));
@@ -4587,9 +5030,12 @@ function updateReviewNavUi() {{
       : '';
   }}
   if (toBlocked) {{
-    toBlocked.style.display = reviewStatus === 'review' ? 'inline-block' : 'none';
+    toBlocked.style.display = 'inline-block';
     toBlocked.style.background = '#7b2432';
     toBlocked.style.borderRadius = '9px';
+    toBlocked.textContent = reviewStatus === 'blocked'
+      ? t('review.btn.add_faces')
+      : t('review.btn.move_blocked');
   }}
   if (toOk) {{
     toOk.style.display = 'inline-block';
@@ -4605,15 +5051,210 @@ function personLabel(slug) {{
   return labels[slug] || slug;
 }}
 
-function personOptions(entries, selected) {{
-  const list = entries || [];
-  const opts = list.map(function(e) {{
-    const slug = (typeof e === 'string') ? e : (e.slug || e);
+let reviewFacePicks = {{}};
+let reviewFacePicksInitial = {{}};
+let reviewAddPersonFaceId = null;
+let reviewOpenPickerFaceId = null;
+
+function folderSlugSet() {{
+  const entries = (reviewDetail && (reviewDetail.people_entries || reviewDetail.people_names)) || [];
+  const set = {{}};
+  entries.forEach(function(e) {{
+    const slug = (typeof e === 'string') ? e : (e.slug || '');
+    if (slug) set[slug.toLowerCase()] = slug;
+  }});
+  return set;
+}}
+
+function buildPersonPickerEntries(face) {{
+  const folderSet = folderSlugSet();
+  const entries = (reviewDetail && (reviewDetail.people_entries || reviewDetail.people_names)) || [];
+  const out = [];
+  const seen = {{}};
+  entries.forEach(function(e) {{
+    const slug = (typeof e === 'string') ? e : (e.slug || '');
+    if (!slug || seen[slug.toLowerCase()]) return;
+    seen[slug.toLowerCase()] = true;
     const label = (typeof e === 'string') ? personLabel(e) : (e.display_name || e.slug || e);
-    const sel = (slug === selected) ? ' selected' : '';
-    return '<option value="' + escapeHtmlAttr(slug) + '"' + sel + '>' + escapeHtml(label) + '</option>';
-  }}).join('');
-  return '<option value="">' + escapeHtml(t('review.person.unknown_option')) + '</option>' + opts;
+    out.push({{ slug: slug, display_name: label, in_folder: true }});
+  }});
+  const detected = (face && face.person_name) ? String(face.person_name).trim() : '';
+  if (detected && !seen[detected.toLowerCase()]) {{
+    seen[detected.toLowerCase()] = true;
+    out.push({{
+      slug: detected,
+      display_name: personLabel(detected),
+      in_folder: !!folderSet[detected.toLowerCase()],
+    }});
+  }}
+  out.sort(function(a, b) {{
+    return String(a.display_name).localeCompare(String(b.display_name), undefined, {{ sensitivity: 'base' }});
+  }});
+  return out;
+}}
+
+function getFacePick(faceId) {{
+  if (Object.prototype.hasOwnProperty.call(reviewFacePicks, faceId)) {{
+    return reviewFacePicks[faceId];
+  }}
+  const face = ((reviewDetail && reviewDetail.faces) || []).find(function(f) {{ return f.face_id === faceId; }});
+  return face && face.person_name ? String(face.person_name) : '';
+}}
+
+function setFacePick(faceId, slug) {{
+  reviewFacePicks[faceId] = slug || '';
+}}
+
+function reviewAssignmentsDirty() {{
+  if (!reviewDetail) return false;
+  const faces = reviewDetail.faces || [];
+  for (let i = 0; i < faces.length; i++) {{
+    const id = faces[i].face_id;
+    const cur = getFacePick(id) || '';
+    const init = Object.prototype.hasOwnProperty.call(reviewFacePicksInitial, id)
+      ? (reviewFacePicksInitial[id] || '')
+      : (faces[i].person_name || '');
+    if (cur !== init) return true;
+  }}
+  return false;
+}}
+
+function closeAllPersonPickers() {{
+  if (reviewOpenPickerFaceId == null) return;
+  reviewOpenPickerFaceId = null;
+  if (reviewDetail) renderFacePanel();
+}}
+
+function togglePersonPicker(faceId, ev) {{
+  if (ev) ev.stopPropagation();
+  reviewOpenPickerFaceId = (reviewOpenPickerFaceId === faceId) ? null : faceId;
+  renderFacePanel();
+  if (reviewOpenPickerFaceId === faceId) {{
+    const search = document.getElementById('review_picker_search_' + faceId);
+    if (search) {{
+      search.value = '';
+      filterPersonPicker(faceId);
+      search.focus();
+    }}
+  }}
+}}
+
+function filterPersonPicker(faceId) {{
+  const search = document.getElementById('review_picker_search_' + faceId);
+  const list = document.getElementById('review_picker_list_' + faceId);
+  if (!list) return;
+  const q = ((search && search.value) || '').trim().toLowerCase();
+  list.querySelectorAll('.person-picker-item[data-slug]').forEach(function(btn) {{
+    const slug = (btn.dataset.slug || '').toLowerCase();
+    const label = (btn.dataset.label || '').toLowerCase();
+    const show = !q || slug.indexOf(q) >= 0 || label.indexOf(q) >= 0;
+    btn.style.display = show ? '' : 'none';
+  }});
+}}
+
+function pickReviewPerson(faceId, slug, ev) {{
+  if (ev) ev.stopPropagation();
+  setFacePick(faceId, slug || '');
+  reviewOpenPickerFaceId = null;
+  renderFacePanel();
+  renderFaceBoxes();
+  // Persist immediately so named faces get cropped into the person folder
+  // (not only when closing or clicking Add faces / Move to blocked).
+  persistFaceAssignment(faceId, slug || '');
+}}
+
+async function persistFaceAssignment(faceId, slug) {{
+  if (!reviewDetail || !reviewAssetId || !reviewFolder) return;
+  try {{
+    const body = new URLSearchParams();
+    body.set('asset_id', String(reviewAssetId));
+    body.set('folder', reviewFolder);
+    body.set('status', reviewStatus);
+    body.set('faces', JSON.stringify([{{ face_id: faceId, person_name: slug || '' }}]));
+    const r = await fetch('/api/review_photo/save_assignments', {{ method: 'POST', body: body }});
+    const d = await r.json();
+    if (!d.ok) {{
+      alert(d.error || t('common.request_failed'));
+      return;
+    }}
+    reviewFacePicksInitial[faceId] = slug || '';
+    const face = (reviewDetail.faces || []).find(function(f) {{ return f.face_id === faceId; }});
+    if (face) face.person_name = slug || null;
+    if (slug && d.crops_written === 0 && reviewDetail.missing_on_disk) {{
+      // Source missing — assignment saved in DB only.
+    }}
+  }} catch (e) {{
+    alert(t('common.request_failed'));
+  }}
+}}
+
+function personPickerHtml(face) {{
+  const faceId = face.face_id;
+  const selected = getFacePick(faceId);
+  const entries = buildPersonPickerEntries(face);
+  const toggleLabel = selected
+    ? personLabel(selected)
+    : t('review.person.unknown_option');
+  const isOpen = reviewOpenPickerFaceId === faceId;
+  let panelHtml = '';
+  if (isOpen) {{
+    const items = [
+      '<button type="button" class="person-picker-item" data-slug="" data-label="' +
+        escapeHtmlAttr(t('review.person.unknown_option')) +
+        '" onclick="pickReviewPerson(' + faceId + ', this.dataset.slug, event)">' +
+        escapeHtml(t('review.person.unknown_option')) + '</button>'
+    ];
+    entries.forEach(function(e) {{
+      const hint = e.in_folder ? '' : ('<span class="hint">' + escapeHtml(t('review.person.not_in_folder')) + '</span>');
+      const active = (e.slug === selected) ? ' active' : '';
+      items.push(
+        '<button type="button" class="person-picker-item' + active + '" data-slug="' + escapeHtmlAttr(e.slug) +
+        '" data-label="' + escapeHtmlAttr(e.display_name) +
+        '" onclick="pickReviewPerson(' + faceId + ', this.dataset.slug, event)">' +
+        escapeHtml(e.display_name) + hint + '</button>'
+      );
+    }});
+    panelHtml =
+      '<div class="person-picker-panel" id="review_picker_panel_' + faceId + '">' +
+        '<input type="search" class="person-picker-search" id="review_picker_search_' + faceId +
+          '" placeholder="' + escapeHtmlAttr(t('review.person.search_placeholder')) +
+          '" oninput="filterPersonPicker(' + faceId + ')" onclick="event.stopPropagation();" ' +
+          'onkeydown="personPickerKeydown(' + faceId + ', event)">' +
+        '<div class="person-picker-list" id="review_picker_list_' + faceId + '">' + items.join('') + '</div>' +
+        '<div class="person-picker-footer">' +
+          '<button type="button" onclick="openReviewAddPersonModal(' + faceId + ', event)">' +
+            escapeHtml(t('review.person.add_new')) + '</button>' +
+        '</div>' +
+      '</div>';
+  }}
+  return (
+    '<div class="person-picker" id="review_person_picker_' + faceId + '" onclick="event.stopPropagation();">' +
+      '<button type="button" class="person-picker-toggle" id="review_person_' + faceId + '" data-value="' +
+        escapeHtmlAttr(selected) + '" onclick="togglePersonPicker(' + faceId + ', event)">' +
+        escapeHtml(toggleLabel) + '</button>' +
+      panelHtml +
+    '</div>'
+  );
+}}
+
+function personPickerKeydown(faceId, ev) {{
+  if (ev.key === 'Escape') {{
+    ev.preventDefault();
+    reviewOpenPickerFaceId = null;
+    renderFacePanel();
+    return;
+  }}
+  if (ev.key !== 'Enter') return;
+  ev.preventDefault();
+  const list = document.getElementById('review_picker_list_' + faceId);
+  if (!list) return;
+  const visible = Array.prototype.filter.call(
+    list.querySelectorAll('.person-picker-item[data-slug]'),
+    function(btn) {{ return btn.style.display !== 'none'; }}
+  );
+  if (!visible.length) return;
+  const slug = visible[0].dataset.slug || '';
+  pickReviewPerson(faceId, slug, ev);
 }}
 
 function renderFaceBoxes() {{
@@ -4631,7 +5272,8 @@ function renderFaceBoxes() {{
     const top = (100 * y1 / ph).toFixed(3);
     const w = (100 * (x2 - x1) / pw).toFixed(3);
     const h = (100 * (y2 - y1) / ph).toFixed(3);
-    const label = f.person_name ? personLabel(f.person_name) : t('review.face.unknown');
+    const pick = getFacePick(f.face_id);
+    const label = pick ? personLabel(pick) : t('review.face.unknown');
     const sel = (reviewSelectedFaceId === f.face_id) ? ' selected' : '';
     const box = document.createElement('div');
     box.className = 'face-box' + sel;
@@ -4649,22 +5291,23 @@ function renderFaceBoxes() {{
 function renderFacePanel() {{
   const panel = document.getElementById('review_faces_panel');
   if (!panel || !reviewDetail) return;
-  const names = reviewDetail.people_entries || reviewDetail.people_names || [];
-  const allowAssign = reviewStatus !== 'blocked';
+  const folderSet = folderSlugSet();
   panel.innerHTML = (reviewDetail.faces || []).map(function(f) {{
     const sel = (reviewSelectedFaceId === f.face_id) ? ' selected' : '';
     const score = (f.match_score != null) ? (' ' + t('review.face.score', {{n: f.match_score.toFixed(1)}})) : '';
     const detected = f.person_name
       ? t('review.face.detected', {{name: escapeHtml(personLabel(f.person_name))}})
       : t('review.face.unknown_face');
-    const pre = f.person_name || '';
-    const assign = allowAssign
-      ? ('<select id="review_person_' + f.face_id + '" onclick="event.stopPropagation();" onchange="event.stopPropagation();">' +
-         personOptions(names, pre) + '</select>')
+    const pick = getFacePick(f.face_id);
+    const missingFolder = !!(pick && !folderSet[pick.toLowerCase()]);
+    const ensureBtn = missingFolder
+      ? ('<button type="button" class="btn-add-folder" onclick="ensureReviewPersonFolder(' +
+         f.face_id + ', event)">' + escapeHtml(t('review.person.add_to_folder')) + '</button>')
       : '';
     return '<div class="review-face-row' + sel + '" data-face-id="' + f.face_id + '" onclick="selectReviewFace(' + f.face_id + ')">' +
       '<div><strong>' + escapeHtml(t('review.face.heading', {{id: f.face_id}})) + '</strong> — ' + detected + score + '</div>' +
-      assign + '</div>';
+      '<div class="review-face-actions" onclick="event.stopPropagation();">' +
+        personPickerHtml(f) + ensureBtn + '</div></div>';
   }}).join('');
 }}
 
@@ -4674,8 +5317,112 @@ function selectReviewFace(faceId) {{
   renderFacePanel();
 }}
 
+function mergePeopleEntry(slug, displayName) {{
+  if (!reviewDetail) return;
+  if (!reviewDetail.people_entries) reviewDetail.people_entries = [];
+  if (!reviewDetail.people_labels) reviewDetail.people_labels = {{}};
+  reviewDetail.people_labels[slug] = displayName || slug;
+  const exists = reviewDetail.people_entries.some(function(e) {{
+    return ((typeof e === 'string') ? e : e.slug) === slug;
+  }});
+  if (!exists) {{
+    reviewDetail.people_entries.push({{ slug: slug, display_name: displayName || slug }});
+  }}
+  (reviewDetail.faces || []).forEach(function(f) {{
+    if (f.person_name === slug) f.in_people_folder = true;
+  }});
+}}
+
+async function ensureReviewPersonFolder(faceId, ev) {{
+  if (ev) ev.stopPropagation();
+  const slug = getFacePick(faceId);
+  if (!slug) return;
+  try {{
+    const body = new URLSearchParams();
+    body.set('name', slug);
+    body.set('display_name', personLabel(slug));
+    const r = await fetch('/api/people/ensure_folder', {{ method: 'POST', body: body }});
+    const d = await r.json();
+    if (!d.ok) {{
+      alert(d.error || t('review.person.ensure_failed'));
+      return;
+    }}
+    mergePeopleEntry(d.slug || slug, d.display_name || personLabel(slug));
+    setFacePick(faceId, d.slug || slug);
+    renderFacePanel();
+    renderFaceBoxes();
+  }} catch (e) {{
+    alert(t('common.request_failed'));
+  }}
+}}
+
+function openReviewAddPersonModal(faceId, ev) {{
+  if (ev) ev.stopPropagation();
+  closeAllPersonPickers();
+  reviewAddPersonFaceId = faceId;
+  const modal = document.getElementById('review_add_person_modal');
+  const first = document.getElementById('review_add_first');
+  const last = document.getElementById('review_add_last');
+  const consent = document.getElementById('review_add_consent');
+  if (first) first.value = '';
+  if (last) last.value = '';
+  if (consent) consent.value = 'blocked';
+  if (modal) modal.classList.add('open');
+  if (first) first.focus();
+}}
+
+function closeReviewAddPersonModal() {{
+  const modal = document.getElementById('review_add_person_modal');
+  if (modal) modal.classList.remove('open');
+  reviewAddPersonFaceId = null;
+}}
+
+async function submitReviewAddPerson(ev) {{
+  ev.preventDefault();
+  const first = ((document.getElementById('review_add_first') || {{}}).value || '').trim();
+  const last = ((document.getElementById('review_add_last') || {{}}).value || '').trim();
+  const consent = ((document.getElementById('review_add_consent') || {{}}).value || 'blocked').trim();
+  if (!first || !last) return false;
+  const faceId = reviewAddPersonFaceId;
+  const fd = new FormData();
+  fd.set('first_name', first);
+  fd.set('last_name', last);
+  fd.set('consent', consent);
+  try {{
+    const r = await fetch('/api/people/create', {{ method: 'POST', body: fd }});
+    const d = await r.json();
+    if (!d.ok) {{
+      alert(d.error || t('review.person.create_failed'));
+      return false;
+    }}
+    mergePeopleEntry(d.slug, d.display_name || d.slug);
+    if (faceId != null) {{
+      setFacePick(faceId, d.slug);
+      reviewOpenPickerFaceId = null;
+      closeReviewAddPersonModal();
+      renderFacePanel();
+      renderFaceBoxes();
+      await persistFaceAssignment(faceId, d.slug);
+    }} else {{
+      closeReviewAddPersonModal();
+    }}
+  }} catch (e) {{
+    alert(t('common.request_failed'));
+  }}
+  return false;
+}}
+
+document.addEventListener('click', function(ev) {{
+  if (ev.target.closest('.person-picker')) return;
+  closeAllPersonPickers();
+}});
+
 async function openReviewAtIndex(idx) {{
   if (idx < 0 || idx >= reviewPhotos.length) return;
+  if (reviewAssetId && reviewAssignmentsDirty()) {{
+    const saved = await saveCurrentReviewAssignments();
+    if (!saved) return;
+  }}
   reviewPhotoIndex = idx;
   await openReviewModal(reviewPhotos[idx].asset_id);
   updateReviewNavUi();
@@ -4688,6 +5435,10 @@ function reviewNav(delta) {{
 async function openReviewModal(assetId) {{
   reviewAssetId = assetId;
   reviewSelectedFaceId = null;
+  reviewFacePicks = {{}};
+  reviewFacePicksInitial = {{}};
+  reviewOpenPickerFaceId = null;
+  closeReviewAddPersonModal();
   const modal = document.getElementById('review_modal');
   const title = document.getElementById('review_modal_title');
   const meta = document.getElementById('review_modal_meta');
@@ -4706,6 +5457,11 @@ async function openReviewModal(assetId) {{
       return;
     }}
     reviewDetail = d;
+    (d.faces || []).forEach(function(f) {{
+      const name = f.person_name ? String(f.person_name) : '';
+      reviewFacePicks[f.face_id] = name;
+      reviewFacePicksInitial[f.face_id] = name;
+    }});
     const kind = reviewKindLabel();
     if (title) title.textContent = d.name || t('review.modal.title_fallback', {{kind: kind}});
     if (meta) meta.textContent = (d.reason || '') + (d.missing_on_disk ? (' ' + t('review.meta.missing_disk')) : '');
@@ -4725,11 +5481,61 @@ async function openReviewModal(assetId) {{
   }}
 }}
 
-function closeReviewModal() {{
+function collectDirtyFaceAssignments() {{
+  const out = [];
+  if (!reviewDetail) return out;
+  (reviewDetail.faces || []).forEach(function(f) {{
+    const cur = (getFacePick(f.face_id) || '').trim();
+    const init = Object.prototype.hasOwnProperty.call(reviewFacePicksInitial, f.face_id)
+      ? String(reviewFacePicksInitial[f.face_id] || '').trim()
+      : String(f.person_name || '').trim();
+    if (cur !== init) {{
+      out.push({{ face_id: f.face_id, person_name: cur }});
+    }}
+  }});
+  return out;
+}}
+
+async function saveCurrentReviewAssignments() {{
+  if (!reviewDetail || !reviewAssetId || !reviewFolder) return true;
+  const assignments = collectDirtyFaceAssignments();
+  if (!assignments.length) return true;
+  try {{
+    const body = new URLSearchParams();
+    body.set('asset_id', String(reviewAssetId));
+    body.set('folder', reviewFolder);
+    body.set('status', reviewStatus);
+    body.set('faces', JSON.stringify(assignments));
+    const r = await fetch('/api/review_photo/save_assignments', {{ method: 'POST', body: body }});
+    const d = await r.json();
+    if (!d.ok) {{
+      alert(d.error || t('common.request_failed'));
+      return false;
+    }}
+    assignments.forEach(function(a) {{
+      reviewFacePicksInitial[a.face_id] = a.person_name || '';
+      const face = (reviewDetail.faces || []).find(function(f) {{ return f.face_id === a.face_id; }});
+      if (face) face.person_name = a.person_name || null;
+    }});
+    return true;
+  }} catch (e) {{
+    alert(t('common.request_failed'));
+    return false;
+  }}
+}}
+
+async function closeReviewModal() {{
+  if (reviewAssetId && reviewAssignmentsDirty()) {{
+    const saved = await saveCurrentReviewAssignments();
+    if (!saved) return;
+  }}
+  reviewOpenPickerFaceId = null;
   const modal = document.getElementById('review_modal');
   if (modal) modal.classList.remove('open');
   reviewDetail = null;
   reviewAssetId = 0;
+  reviewFacePicks = {{}};
+  reviewFacePicksInitial = {{}};
   reviewPhotoIndex = -1;
   highlightReviewThumb();
 }}
@@ -4738,8 +5544,7 @@ function collectFaceAssignments() {{
   const out = [];
   if (!reviewDetail) return out;
   (reviewDetail.faces || []).forEach(function(f) {{
-    const sel = document.getElementById('review_person_' + f.face_id);
-    const person = sel ? (sel.value || '').trim() : (f.person_name || '').trim();
+    const person = (getFacePick(f.face_id) || '').trim();
     if (person) out.push({{ face_id: f.face_id, person_name: person }});
   }});
   return out;
@@ -4751,6 +5556,10 @@ async function confirmReviewOk() {{
     ? t('review.confirm.ok_from_blocked')
     : t('review.confirm.ok_from_review');
   if (!confirm(msg)) return;
+  if (reviewAssignmentsDirty()) {{
+    const saved = await saveCurrentReviewAssignments();
+    if (!saved) return;
+  }}
   const meta = document.getElementById('review_modal_meta');
   if (meta) meta.textContent = t('review.meta.processing');
   try {{
@@ -4772,6 +5581,8 @@ async function confirmReviewOk() {{
 }}
 
 async function afterReviewProcessed(message) {{
+  // Status-changing actions already persisted assignments; avoid re-save as review.
+  reviewFacePicksInitial = Object.assign({{}}, reviewFacePicks);
   const keepIdx = reviewPhotoIndex;
   const modal = document.getElementById('review_modal');
   const stayOpen = modal && modal.classList.contains('open');
@@ -4779,7 +5590,7 @@ async function afterReviewProcessed(message) {{
   if (stayOpen && reviewPhotos.length) {{
     await openReviewAtIndex(Math.min(keepIdx, reviewPhotos.length - 1));
   }} else {{
-    closeReviewModal();
+    await closeReviewModal();
   }}
   if (message) {{
     const meta = document.getElementById('review_modal_meta');
@@ -4796,13 +5607,15 @@ async function confirmReviewBlocked() {{
     return;
   }}
   const summary = assignments.map(function(a) {{ return a.person_name + ' (face ' + a.face_id + ')'; }}).join('\\n');
-  if (!confirm(t('review.confirm.blocked', {{summary: summary}}))) return;
+  const confirmKey = reviewStatus === 'blocked' ? 'review.confirm.add_faces' : 'review.confirm.blocked';
+  if (!confirm(t(confirmKey, {{summary: summary}}))) return;
   const meta = document.getElementById('review_modal_meta');
   if (meta) meta.textContent = t('review.meta.processing');
   try {{
     const body = new URLSearchParams();
     body.set('asset_id', String(reviewAssetId));
     body.set('folder', reviewFolder);
+    body.set('status', reviewStatus);
     body.set('faces', JSON.stringify(assignments));
     const r = await fetch('/api/review_photo/confirm_blocked', {{ method: 'POST', body: body }});
     const d = await r.json();
@@ -4822,7 +5635,7 @@ async function batchReviewBlocked() {{
   const n = reviewPhotos.length;
   if (!n) return;
   if (!confirm(t('review.confirm.batch', {{n: n}}))) return;
-  closeReviewModal();
+  await closeReviewModal();
   const meta = document.getElementById('review_list_meta');
   if (meta) meta.textContent = t('review.meta.batch_processing');
   try {{
@@ -4854,6 +5667,16 @@ document.addEventListener('keydown', function(ev) {{
   const modal = document.getElementById('review_modal');
   const open = modal && modal.classList.contains('open');
   if (ev.key === 'Escape') {{
+    if (reviewOpenPickerFaceId != null) {{
+      reviewOpenPickerFaceId = null;
+      if (reviewDetail) renderFacePanel();
+      return;
+    }}
+    const addModal = document.getElementById('review_add_person_modal');
+    if (addModal && addModal.classList.contains('open')) {{
+      closeReviewAddPersonModal();
+      return;
+    }}
     closeReviewModal();
     return;
   }}
@@ -4948,12 +5771,12 @@ document.addEventListener('keydown', function(ev) {{
     <h2 id="gallery_title">{html.escape(_t("people.gallery.title", lang))}</h2>
     <div id="gallery_meta" style="color:var(--muted);font-size:13px;"></div>
     <div id="gallery_hero" class="gallery-hero"></div>
-    <div class="review-nav-row" style="margin:8px 0;">
-      <button type="button" id="gallery_prev_btn" onclick="galleryNav(-1)">{html.escape(_t("people.gallery.prev", lang))}</button>
-      <button type="button" id="gallery_next_btn" onclick="galleryNav(1)">{html.escape(_t("people.gallery.next", lang))}</button>
+    <div id="gallery_source" class="gallery-source"></div>
+    <div id="gallery_match" class="gallery-match"></div>
+    <div class="gallery-pos-row">
       <span id="gallery_pos_label" class="review-pos"></span>
     </div>
-    <div style="margin:8px 0;">
+    <div style="margin:8px 0;text-align:center;">
       <button type="button" id="gallery_delete_btn" onclick="deleteGalleryPhoto()" style="background:#7b2432;border-radius:9px;display:none;">{html.escape(_t("people.gallery.delete", lang))}</button>
     </div>
     <div id="gallery_grid" class="gallery-grid"></div>
@@ -5721,6 +6544,8 @@ async function openGallery(name) {{
   const meta = document.getElementById('gallery_meta');
   const grid = document.getElementById('gallery_grid');
   const hero = document.getElementById('gallery_hero');
+  const srcEl = document.getElementById('gallery_source');
+  const matchEl = document.getElementById('gallery_match');
   const delBtn = document.getElementById('gallery_delete_btn');
   galleryPersonName = name;
   gallerySelectedPath = '';
@@ -5730,6 +6555,8 @@ async function openGallery(name) {{
   meta.textContent = t('people.gallery.loading');
   grid.innerHTML = '';
   hero.innerHTML = '';
+  if (srcEl) srcEl.textContent = '';
+  if (matchEl) matchEl.textContent = '';
   if (delBtn) delBtn.style.display = 'none';
   updateGalleryNavUi();
   modal.classList.add('open');
@@ -5749,9 +6576,22 @@ async function openGallery(name) {{
       const url = escapeHtmlAttr(p.url);
       const path = escapeHtmlAttr(p.path);
       const fname = escapeHtmlAttr(p.name);
+      const score = (p.match_score != null && !isNaN(Number(p.match_score)))
+        ? Number(p.match_score)
+        : null;
+      const scoreLabel = (score != null) ? score.toFixed(1) : '';
+      const titleBits = [p.name];
+      if (score != null) titleBits.push(t('people.gallery.match_score', {{n: scoreLabel}}));
+      const titleAttr = escapeHtmlAttr(titleBits.join(' — '));
+      const badge = (score != null)
+        ? ('<span class="gallery-score-badge">' + escapeHtml(scoreLabel) + '</span>')
+        : '';
       return (
-        '<img class="gallery-thumb" src="' + url + '" alt="' + fname + '" title="' + fname + '" '
-        + 'data-idx="' + idx + '" data-url="' + url + '" data-path="' + path + '" data-name="' + fname + '">'
+        '<div class="gallery-thumb-wrap">' +
+          '<img class="gallery-thumb" src="' + url + '" alt="' + fname + '" title="' + titleAttr + '" '
+          + 'data-idx="' + idx + '" data-url="' + url + '" data-path="' + path + '" data-name="' + fname + '">' +
+          badge +
+        '</div>'
       );
     }}).join('');
     if (galleryPhotos.length) showHeroAtIndex(0);
@@ -5769,13 +6609,7 @@ let galleryPhotos = [];
 let galleryPhotoIndex = -1;
 
 function updateGalleryNavUi() {{
-  const prev = document.getElementById('gallery_prev_btn');
-  const next = document.getElementById('gallery_next_btn');
   const pos = document.getElementById('gallery_pos_label');
-  const atStart = galleryPhotoIndex <= 0;
-  const atEnd = galleryPhotoIndex < 0 || galleryPhotoIndex >= galleryPhotos.length - 1;
-  if (prev) prev.disabled = atStart;
-  if (next) next.disabled = atEnd;
   if (pos) {{
     pos.textContent = (galleryPhotos.length && galleryPhotoIndex >= 0)
       ? ((galleryPhotoIndex + 1) + ' / ' + galleryPhotos.length)
@@ -5787,7 +6621,7 @@ function showHeroAtIndex(idx) {{
   if (idx < 0 || idx >= galleryPhotos.length) return;
   galleryPhotoIndex = idx;
   const p = galleryPhotos[idx];
-  showHero(p.url, p.path, p.name);
+  showHero(p.url, p.path, p.name, p.source_path || null, p.match_score);
   updateGalleryNavUi();
 }}
 
@@ -5795,11 +6629,24 @@ function galleryNav(delta) {{
   showHeroAtIndex(galleryPhotoIndex + delta);
 }}
 
-function showHero(url, path, fileName) {{
+function showHero(url, path, fileName, sourcePath, matchScore) {{
   gallerySelectedPath = path || '';
   gallerySelectedName = fileName || '';
   const safeUrl = escapeHtmlAttr(url || '');
   document.getElementById('gallery_hero').innerHTML = '<img src="' + safeUrl + '" alt="' + escapeHtmlAttr(t('common.preview_alt')) + '">';
+  const srcEl = document.getElementById('gallery_source');
+  if (srcEl) {{
+    const sp = (sourcePath || '').trim();
+    srcEl.textContent = sp || t('people.gallery.source_unknown');
+  }}
+  const matchEl = document.getElementById('gallery_match');
+  if (matchEl) {{
+    if (matchScore != null && !isNaN(Number(matchScore))) {{
+      matchEl.textContent = t('people.gallery.match_score', {{n: Number(matchScore).toFixed(1)}});
+    }} else {{
+      matchEl.textContent = '';
+    }}
+  }}
   const delBtn = document.getElementById('gallery_delete_btn');
   if (delBtn) delBtn.style.display = gallerySelectedPath ? 'inline-block' : 'none';
   document.querySelectorAll('#gallery_grid img.gallery-thumb').forEach(function(el) {{
@@ -5863,7 +6710,7 @@ document.addEventListener('keydown', function(e) {{
 }});
 
 async function pickFolder(targetId) {{
-  const r = await fetch('/api/pick_folder');
+  const r = await fetch('/api/pick_folder?target=' + encodeURIComponent(targetId || ''));
   const d = await r.json();
   if (!d.ok) {{
     alert(d.error || t('common.alert.picker_failed'));
@@ -6038,7 +6885,7 @@ async function stopServer() {{
 </fieldset>
 <script>
 async function pickFolder(targetId) {{
-  const r = await fetch('/api/pick_folder');
+  const r = await fetch('/api/pick_folder?target=' + encodeURIComponent(targetId || ''));
   const d = await r.json();
   if (!d.ok) {{
     alert(d.error || t('common.alert.picker_failed'));
@@ -6286,6 +7133,15 @@ setInterval(poll, 1000); poll();
                 self._send_json(_update_person_request(fs, lang=lang))
             return
         form = self._parse_form()
+        if parsed.path == "/api/people/ensure_folder":
+            self._send_json(
+                _ensure_person_folder_request(
+                    form.get("name", ""),
+                    form.get("display_name", ""),
+                    lang=lang,
+                )
+            )
+            return
         if parsed.path == "/shutdown":
             STATE.add_log("Shutdown requested from UI.")
             self._send_json({"ok": True, "message": _t("api.shutdown", lang)})
@@ -6341,6 +7197,23 @@ setInterval(poll, 1000); poll();
                     asset_id,
                     form.get("folder", "").strip(),
                     form.get("faces", "").strip(),
+                    status=form.get("status", "review").strip(),
+                    lang=lang,
+                )
+            )
+            return
+        if parsed.path == "/api/review_photo/save_assignments":
+            try:
+                asset_id = int(form.get("asset_id", "0").strip())
+            except ValueError:
+                self._send_json({"ok": False, "error": _t("api.invalid_asset", lang)})
+                return
+            self._send_json(
+                _save_review_face_assignments_request(
+                    asset_id,
+                    form.get("folder", "").strip(),
+                    form.get("faces", "").strip(),
+                    form.get("status", "review").strip(),
                     lang=lang,
                 )
             )

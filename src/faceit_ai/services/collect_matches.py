@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from faceit_ai.logging_setup import PHASE_CHECK, log_collect_audit, log_run_phase
 from faceit_ai.persistence.models import Asset, AssetFace, Person
+from faceit_ai.services.collected_photos import upsert_collected_photo
 from faceit_ai.settings import CollectSettings, ImagePipelineSettings
 from faceit_ai.vision.face_crop import (
     PortraitCropParams,
@@ -75,6 +76,29 @@ def _write_cropped_portrait(
         return False
 
 
+def _record_collected_link(
+    session: Session | None,
+    *,
+    dest: Path,
+    source: Path,
+    person_name: str,
+    log: logging.Logger,
+    match_score: float | None = None,
+) -> None:
+    if session is None:
+        return
+    try:
+        upsert_collected_photo(
+            session,
+            collected_path=dest,
+            source_path=source,
+            person_name=person_name,
+            match_score=match_score,
+        )
+    except Exception:
+        log.exception("collect: failed to record source link for %s", dest)
+
+
 def collect_asset_for_person(
     *,
     source_path: Path,
@@ -86,6 +110,8 @@ def collect_asset_for_person(
     audit: logging.Logger | None = None,
     logger: logging.Logger | None = None,
     overwrite: bool = False,
+    session: Session | None = None,
+    match_score: float | None = None,
 ) -> int:
     """Copy or crop ``source_path`` into ``<people_root>/<person_name>/``.
 
@@ -138,6 +164,14 @@ def collect_asset_for_person(
                     action="skip_identical",
                     extra={"reason": "destination_exists"},
                 )
+            _record_collected_link(
+                session,
+                dest=dest,
+                source=src_res,
+                person_name=name,
+                log=log,
+                match_score=match_score,
+            )
             return 0
         if not use_crop:
             dest = dest_dir / f"{src_res.stem}_{_short_sha8(src_res)}{src_res.suffix}"
@@ -151,6 +185,14 @@ def collect_asset_for_person(
                         action="skip_identical",
                         extra={"reason": "hashed_destination_exists"},
                     )
+                _record_collected_link(
+                    session,
+                    dest=dest,
+                    source=src_res,
+                    person_name=name,
+                    log=log,
+                    match_score=match_score,
+                )
                 return 0
 
     action = "copy"
@@ -179,6 +221,14 @@ def collect_asset_for_person(
                 person=name,
                 action=action,
             )
+        _record_collected_link(
+            session,
+            dest=dest,
+            source=src_res,
+            person_name=name,
+            log=log,
+            match_score=match_score,
+        )
         return 1
     except OSError as e:
         log.warning("collect: write failed %s -> %s: %s", src_res, dest, e)
@@ -190,8 +240,8 @@ def list_strong_match_collect_jobs(
     scan_root: Path,
     *,
     match_threshold: float,
-) -> list[tuple[Path, dict[str, tuple[float, float, float, float] | None]]]:
-    """``(resolved_asset_path, {person_name: bbox or None})`` under ``scan_root``."""
+) -> list[tuple[Path, dict[str, tuple[tuple[float, float, float, float] | None, float]]]]:
+    """``(resolved_asset_path, {person_name: (bbox or None, match_score)})`` under ``scan_root``."""
     root_res = scan_root.resolve()
     stmt = (
         select(Asset.path, Person.name, AssetFace.bbox, AssetFace.match_score)
@@ -224,16 +274,19 @@ def list_strong_match_collect_jobs(
         if prev is None or sc > prev[0]:
             best[pr][pname] = (sc, str(bbox_json))
 
-    out: list[tuple[Path, dict[str, tuple[float, float, float, float] | None]]] = []
+    out: list[
+        tuple[Path, dict[str, tuple[tuple[float, float, float, float] | None, float]]]
+    ] = []
     for path, persons in best.items():
-        bbox_map: dict[str, tuple[float, float, float, float] | None] = {}
-        for pname, (_sc, bbox_json) in persons.items():
+        person_map: dict[str, tuple[tuple[float, float, float, float] | None, float]] = {}
+        for pname, (sc, bbox_json) in persons.items():
             try:
-                bbox_map[pname] = parse_bbox_json(bbox_json)
+                bbox = parse_bbox_json(bbox_json)
             except (ValueError, json.JSONDecodeError):
-                bbox_map[pname] = None
-        if bbox_map:
-            out.append((path, bbox_map))
+                bbox = None
+            person_map[pname] = (bbox, sc)
+        if person_map:
+            out.append((path, person_map))
     out.sort(key=lambda t: str(t[0]))
     return out
 
@@ -300,13 +353,13 @@ def collect_strong_matches_under_folder(
     n_missing = 0
     warnings: list[str] = []
 
-    for source_path, person_bboxes in jobs:
+    for source_path, person_entries in jobs:
         if not source_path.is_file():
             n_missing += 1
             warnings.append(f"missing on disk: {source_path}")
             continue
         n_assets += 1
-        for person_name, bbox in person_bboxes.items():
+        for person_name, (bbox, score) in person_entries.items():
             n_copies += collect_asset_for_person(
                 source_path=source_path,
                 person_name=person_name,
@@ -317,6 +370,8 @@ def collect_strong_matches_under_folder(
                 audit=audit,
                 logger=log,
                 overwrite=overwrite,
+                session=session,
+                match_score=score,
             )
 
     if warnings:

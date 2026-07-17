@@ -77,6 +77,33 @@ def folder_claim_key(folder: Path | str) -> str:
     return key if key != "/" else str(p).replace("\\", "/").lower()
 
 
+def asset_path_in_folder(asset_path: Path | str, folder: Path | str) -> bool:
+    """True if ``asset_path`` is ``folder`` or a file/dir under it (Mac/Windows/UNC safe)."""
+    file_key = folder_claim_key(asset_path)
+    folder_key = folder_claim_key(folder).rstrip("/")
+    if len(folder_key) < 2:
+        return False
+    return file_key == folder_key or file_key.startswith(folder_key + "/")
+
+
+def folder_path_prefixes(folder: Path | str) -> tuple[str, ...]:
+    """Literal path prefixes for fast SQL ``startswith`` (same-OS matches)."""
+    raw = Path(folder).expanduser()
+    try:
+        resolved = str(raw.resolve())
+    except OSError:
+        resolved = str(raw)
+    variants = {
+        resolved,
+        resolved.replace("\\", "/"),
+        resolved.replace("/", "\\"),
+        str(raw),
+        str(raw).replace("\\", "/"),
+        str(raw).replace("/", "\\"),
+    }
+    return tuple(v for v in variants if v)
+
+
 def _normalize(folder: Path | str) -> str:
     return folder_claim_key(folder)
 

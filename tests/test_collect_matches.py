@@ -150,7 +150,8 @@ def test_list_strong_match_collect_jobs_picks_best_bbox(tmp_path: Path) -> None:
     with sf() as s:
         jobs = list_strong_match_collect_jobs(s, root, match_threshold=295.0)
 
-    assert jobs[0][1]["Sam"] == (50.0, 50.0, 60.0, 60.0)
+    assert jobs[0][1]["Sam"][0] == (50.0, 50.0, 60.0, 60.0)
+    assert jobs[0][1]["Sam"][1] == 310.0
 
 
 def test_collect_with_crop_writes_jpg(tmp_path: Path) -> None:

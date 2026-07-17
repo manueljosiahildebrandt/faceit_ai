@@ -40,7 +40,7 @@ class FaceitGui:
         self.status_blocked_var = tk.BooleanVar(value=True)
         self.status_review_var = tk.BooleanVar(value=True)
         self.status_ok_var = tk.BooleanVar(value=False)
-        self.export_mode_var = tk.StringVar(value="off")
+        self.export_mode_var = tk.StringVar(value="copy")
 
         self.det_size_var = tk.StringVar()
         self.max_dimension_var = tk.StringVar()

@@ -2718,15 +2718,77 @@ def _current_db_label() -> str:
     return f"Server: {_mask_db_url(url)}"
 
 
-_ACTIVE_RUNS_CACHE: dict[str, object] = {"ts": 0.0, "runs": []}
+def _db_identity() -> dict[str, object]:
+    """Short identity so operators can verify two PCs hit the same database."""
+    try:
+        settings = load_settings()
+        url = settings.database_url
+    except Exception as e:
+        return {"ok": False, "error": str(e), "backend": "unknown", "shared": False}
+    if url.startswith("sqlite:"):
+        return {
+            "ok": True,
+            "backend": "sqlite",
+            "shared": False,
+            "label": _current_db_label(),
+            "detail": url.replace("sqlite:///", ""),
+        }
+    detail = _mask_db_url(url)
+    try:
+        _, session_factory = create_engine_and_session_factory(url)
+        with session_scope(session_factory) as session:
+            # Postgres: prove which server/db we're on (visible across PCs).
+            try:
+                row = session.execute(
+                    text(
+                        "SELECT current_database() AS db, "
+                        "COALESCE(inet_server_addr()::text, '') AS addr, "
+                        "COALESCE(inet_server_port()::text, '') AS port"
+                    )
+                ).mappings().first()
+                if row is not None:
+                    db = str(row.get("db") or "")
+                    addr = str(row.get("addr") or "")
+                    port = str(row.get("port") or "")
+                    where = f"{db} @ {addr}:{port}" if addr else db
+                    detail = where or detail
+            except Exception:
+                pass
+    except Exception as e:
+        return {
+            "ok": False,
+            "backend": "server",
+            "shared": True,
+            "label": _current_db_label(),
+            "detail": detail,
+            "error": str(e),
+        }
+    return {
+        "ok": True,
+        "backend": "server",
+        "shared": True,
+        "label": _current_db_label(),
+        "detail": detail,
+    }
+
+
+_ACTIVE_RUNS_CACHE: dict[str, object] = {"ts": 0.0, "runs": [], "url": ""}
 _ACTIVE_RUNS_LOCK = threading.Lock()
 
 
 def _get_active_runs_cached() -> list[dict[str, object]]:
     """Active analysis runs across all machines, queried at most every few seconds."""
     now = time.time()
+    try:
+        url = load_settings().database_url
+    except Exception:
+        url = ""
     with _ACTIVE_RUNS_LOCK:
-        if now - float(_ACTIVE_RUNS_CACHE["ts"]) < 3.0:
+        if (
+            url
+            and url == str(_ACTIVE_RUNS_CACHE.get("url") or "")
+            and now - float(_ACTIVE_RUNS_CACHE["ts"]) < 3.0
+        ):
             return list(_ACTIVE_RUNS_CACHE["runs"])  # type: ignore[arg-type]
     try:
         settings = load_settings()
@@ -2738,6 +2800,7 @@ def _get_active_runs_cached() -> list[dict[str, object]]:
     with _ACTIVE_RUNS_LOCK:
         _ACTIVE_RUNS_CACHE["ts"] = now
         _ACTIVE_RUNS_CACHE["runs"] = runs
+        _ACTIVE_RUNS_CACHE["url"] = url
     return runs
 
 
@@ -3906,6 +3969,8 @@ function setLang(code) {{
         if parsed.path == "/api/status":
             snap = STATE.snapshot()
             snap["active_runs"] = _get_active_runs_cached()
+            snap["this_host"] = this_host()
+            snap["db_identity"] = _db_identity()
             self._send_json(snap)
             return
         if parsed.path == "/api/pick_folder":
@@ -5958,6 +6023,7 @@ async function stopServer() {{
   </div>
   <div style="margin-top:10px;">
     <div class="group-title" style="margin:0 0 6px;">{html.escape(_t("analyze.active_runs.title", lang))}</div>
+    <div id="active_runs_meta" style="color:var(--muted);font-size:12px;margin-bottom:6px;"></div>
     <div id="active_runs" style="color:var(--muted);font-size:13px;white-space:pre-line;">-</div>
   </div>
 </fieldset>
@@ -6174,12 +6240,28 @@ async function poll() {{
   document.getElementById('progress_line').textContent = p || '-';
   const runs = d.active_runs || [];
   const ar = document.getElementById('active_runs');
+  const meta = document.getElementById('active_runs_meta');
+  if (meta) {{
+    const idn = d.db_identity || {{}};
+    const host = d.this_host || '';
+    const detail = idn.detail || idn.label || '-';
+    let metaText = t('analyze.active_runs.db', {{detail: detail}});
+    if (host) metaText += '\\n' + t('analyze.active_runs.this_host', {{host: host}});
+    if (idn.backend === 'sqlite' || idn.shared === false) {{
+      metaText += '\\n' + t('analyze.active_runs.hint_sqlite');
+    }}
+    meta.textContent = metaText;
+    meta.style.color = (idn.backend === 'sqlite' || idn.shared === false) ? '#ef6b73' : 'var(--muted)';
+  }}
   if (ar) {{
     if (!runs.length) {{
       ar.textContent = t('analyze.active_runs.empty');
     }} else {{
+      const me = d.this_host || '';
+      const markLabel = t('analyze.active_runs.this_pc_mark');
       ar.textContent = runs.map(function(r) {{
-        return r.host + ' -> ' + (r.folder_name || r.folder);
+        const mark = (me && r.host === me) ? markLabel : '';
+        return r.host + ' -> ' + (r.folder_name || r.folder) + mark;
       }}).join('\\n');
     }}
   }}

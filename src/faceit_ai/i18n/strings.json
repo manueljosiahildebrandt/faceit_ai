@@ -111,6 +111,22 @@
     "de": "Aktuell analysiert kein Rechner.",
     "en": "No machines are analyzing right now."
   },
+  "analyze.active_runs.hint_sqlite": {
+    "de": "Diese Instanz nutzt lokales SQLite — andere PCs erscheinen hier nicht. In Einstellungen dieselbe PostgreSQL-URL setzen und speichern.",
+    "en": "This instance uses local SQLite — other PCs will not appear here. Set the same PostgreSQL URL in Settings and save."
+  },
+  "analyze.active_runs.db": {
+    "de": "Datenbank: {detail}",
+    "en": "Database: {detail}"
+  },
+  "analyze.active_runs.this_host": {
+    "de": "Dieser PC: {host}",
+    "en": "This PC: {host}"
+  },
+  "analyze.active_runs.this_pc_mark": {
+    "de": " (dieser PC)",
+    "en": " (this PC)"
+  },
   "analyze.active_runs.title": {
     "de": "Aktuell laufende Rechner (gemeinsame Datenbank)",
     "en": "Machines running now (shared database)"

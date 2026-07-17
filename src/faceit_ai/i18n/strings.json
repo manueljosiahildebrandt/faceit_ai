@@ -591,6 +591,18 @@
     "de": "Name",
     "en": "Name"
   },
+  "people.col.name_first": {
+    "de": "Vorname",
+    "en": "Name"
+  },
+  "people.col.name_last": {
+    "de": "Nachname",
+    "en": "Surname"
+  },
+  "people.col.name_sep": {
+    "de": "·",
+    "en": "·"
+  },
   "people.col.photos": {
     "de": "Fotos",
     "en": "Photos"

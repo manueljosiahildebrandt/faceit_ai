@@ -38,6 +38,7 @@ from faceit_ai.services.person_profile import (
     existing_person_folder,
     default_display_name,
     display_name_from_slug,
+    fold_german_umlauts,
     folder_slug,
     merge_tags,
     cycle_tag_consent,
@@ -2098,6 +2099,62 @@ def _display_ordered_tags(tags: list[dict[str, str]]) -> list[dict[str, str]]:
     return years + custom
 
 
+def _people_name_display_parts(first_name: str, last_name: str, slug: str) -> tuple[str, str]:
+    """Original-spelling first/last for display (slug fallback when profile fields empty)."""
+    first = (first_name or "").strip()
+    last = (last_name or "").strip()
+    if not first or not last:
+        parts = slug.split("_", 1)
+        if len(parts) == 2:
+            if not last:
+                last = parts[0].replace("-", " ")
+            if not first:
+                first = parts[1].replace("-", " ")
+    return first, last
+
+
+def _people_name_label(first: str, last: str, display_fallback: str, *, last_first: bool = False) -> str:
+    if first and last:
+        if last_first:
+            return f"{last}, {first}"
+        return f"{first} {last}"
+    return display_fallback
+
+
+def _people_name_sort_keys(first_name: str, last_name: str, slug: str) -> tuple[str, str]:
+    """Lowercase folded keys for People-table name sorting."""
+    first = (first_name or "").strip()
+    last = (last_name or "").strip()
+    if not first or not last:
+        parts = slug.split("_", 1)
+        if len(parts) == 2:
+            if not last:
+                last = parts[0].replace("-", " ")
+            if not first:
+                first = parts[1].replace("-", " ")
+    first_key = fold_german_umlauts(first).casefold()
+    last_key = fold_german_umlauts(last).casefold()
+    return first_key, last_key
+
+
+def _people_name_column_header_html(lang: str = DEFAULT_LANG) -> str:
+    """Combined name header (fixed ``Name · Surname``); parts toggle sort + row labels."""
+    first_l = html.escape(_t("people.col.name_first", lang))
+    last_l = html.escape(_t("people.col.name_last", lang))
+    sep = html.escape(_t("people.col.name_sep", lang))
+    return (
+        f'<th class="sortable people-name-col sort-asc" '
+        f'style="text-align:left" data-sort-key="name">'
+        f'<span class="people-name-sort-label">'
+        f'<button type="button" class="people-name-sort-part sort-active" '
+        f'data-name-part="first" onclick="sortPeopleName(event, \'first\')">{first_l}</button>'
+        f'<span class="people-name-sort-sep">{sep}</span>'
+        f'<button type="button" class="people-name-sort-part" '
+        f'data-name-part="last" onclick="sortPeopleName(event, \'last\')">{last_l}</button>'
+        f"</span></th>"
+    )
+
+
 def _tag_pill_html(
     name_js: str, tag_name: str, consent: str, lang: str = DEFAULT_LANG
 ) -> str:
@@ -2117,16 +2174,18 @@ def _tag_pill_html(
     )
 
 
-def _tag_rows_html(pills: list[str], add_btn: str) -> str:
-    """Chunk pills into rows of 4; ``+`` rides as a trailing 5th slot on the last row."""
+def _tag_rows_html(pills: list[str], add_btn: str | None = None) -> str:
+    """Chunk pills into rows of 4; optional ``+`` inline on the last row only."""
     if not pills:
-        return f'<div class="tag-row tag-row--last">{add_btn}</div>'
+        if add_btn:
+            return f'<div class="tag-row tag-row--last">{add_btn}</div>'
+        return ""
     parts: list[str] = []
     for i in range(0, len(pills), 4):
         chunk = pills[i : i + 4]
         is_last = i + 4 >= len(pills)
         cls = "tag-row tag-row--last" if is_last else "tag-row"
-        extra = add_btn if is_last else ""
+        extra = add_btn if is_last and add_btn else ""
         parts.append(f'<div class="{cls}">{"".join(chunk)}{extra}</div>')
     return "".join(parts)
 
@@ -2160,29 +2219,34 @@ def _tags_cell_html(
         f'data-person-slug="{slug_attr}" '
         f"onclick='openTagPicker(event, {name_js}, {names_js})'>+</button>"
     )
+    # Tier C (>8 tags): ``+`` lives in the top row next to more/less (stable when toggling).
+    # Tier A/B (<4 / 4–8): ``+`` inline after the last chip row.
+    tier_overflow = has_overflow
+    inline_add_btn: str | None = add_btn if not tier_overflow else None
     more_row = ""
-    if has_overflow:
+    if tier_overflow:
         more_row = (
             f'<div class="tags-more-row">'
             f'<button type="button" class="tag-pill tag-more" '
             f"onclick='toggleTagsExpand(event, this)'>"
             f"{html.escape(_t('people.tag.more', lang))}</button>"
+            f"{add_btn}"
             f"</div>"
         )
     overflow_cls = " has-overflow" if has_overflow else ""
-    if has_overflow:
+    if tier_overflow:
         rows_html = (
             f'<div class="tag-rows tag-rows--collapsed">'
-            f"{_tag_rows_html(collapsed_pills, add_btn)}"
+            f"{_tag_rows_html(collapsed_pills, None)}"
             f"</div>"
             f'<div class="tag-rows tag-rows--expanded">'
-            f"{_tag_rows_html(all_pills, add_btn)}"
+            f"{_tag_rows_html(all_pills, None)}"
             f"</div>"
         )
     else:
         rows_html = (
             f'<div class="tag-rows tag-rows--collapsed">'
-            f"{_tag_rows_html(all_pills, add_btn)}"
+            f"{_tag_rows_html(all_pills, inline_add_btn)}"
             f"</div>"
         )
     return (
@@ -2287,10 +2351,19 @@ def _people_table_body_html(
         if display_raw != name_raw:
             slug_sub = f'<div class="people-name-sub">{name_esc}</div>'
 
+        first_disp, last_disp = _people_name_display_parts(
+            str(r.get("first_name") or ""),
+            str(r.get("last_name") or ""),
+            name_raw,
+        )
+        name_label = _people_name_label(first_disp, last_disp, display_raw, last_first=False)
+        name_label_esc = html.escape(name_label)
+
         name_cell = (
             f'<td class="people-name-cell">'
             f'<span class="people-name-line">'
-            f"<a class='person-link' href='#' onclick='return openGallery({name_js})'>{display_esc}</a>"
+            f"<a class='person-link' href='#' onclick='return openGallery({name_js})'>"
+            f'<span class="person-link-label">{name_label_esc}</span></a>'
             f"{warn}"
             f"</span>{slug_sub}{status_sub}"
             f"</td>"
@@ -2345,6 +2418,11 @@ def _people_table_body_html(
         )
 
         tags_cell = _tags_cell_html(name_js, tags, name_raw, lang=lang)
+        sort_first, sort_last = _people_name_sort_keys(
+            str(r.get("first_name") or ""),
+            str(r.get("last_name") or ""),
+            name_raw,
+        )
         sort_name = html.escape(display_raw.lower())
         sort_tags = html.escape(" ".join(tag_names).lower())
         sort_consent = "1" if r.get("consent") else "0"
@@ -2353,7 +2431,13 @@ def _people_table_body_html(
             f"<tr{row_cls} data-person-name=\"{html.escape(name_raw.lower())}\" "
             f'data-search-text="{search_text}" '
             f'data-search-core="{search_core}" data-search-tags="{search_tags}" '
-            f'data-sort-name="{sort_name}" data-sort-photos="{photos}" '
+            f'data-sort-name="{sort_name}" '
+            f'data-display-first="{html.escape(first_disp)}" '
+            f'data-display-last="{html.escape(last_disp)}" '
+            f'data-display-fallback="{html.escape(display_raw)}" '
+            f'data-sort-first="{html.escape(sort_first)}" '
+            f'data-sort-last="{html.escape(sort_last)}" '
+            f'data-sort-photos="{photos}" '
             f'data-sort-faces="{embeddings}" data-sort-consent="{sort_consent}" '
             f'data-sort-tags="{sort_tags}">'
             f"{name_cell}"
@@ -3506,6 +3590,35 @@ h1 {
 .people-table th.sortable:hover { color: var(--accent); }
 .people-table th.sort-asc::after { content: " ▲"; font-size: 10px; }
 .people-table th.sort-desc::after { content: " ▼"; font-size: 10px; }
+.people-table th.people-name-col.sort-asc::after,
+.people-table th.people-name-col.sort-desc::after { content: none; }
+.people-name-col .people-name-sort-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+}
+.people-name-sort-sep {
+  color: var(--muted);
+  user-select: none;
+}
+.people-name-sort-part {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.people-name-sort-part:hover { color: var(--accent); }
+.people-name-sort-part.sort-active { color: var(--accent); }
+.people-name-col.sort-asc .people-name-sort-part.sort-active::after {
+  content: " ▲";
+  font-size: 10px;
+}
+.people-name-col.sort-desc .people-name-sort-part.sort-active::after {
+  content: " ▼";
+  font-size: 10px;
+}
 .tags-cell {
   display: flex;
   flex-direction: column;
@@ -3517,6 +3630,8 @@ h1 {
 .tags-more-row {
   display: none;
   justify-content: center;
+  align-items: center;
+  gap: 8px;
   width: 100%;
 }
 .tags-cell.has-overflow .tags-more-row {
@@ -3540,34 +3655,34 @@ h1 {
   gap: 8px;
   align-items: center;
 }
-.tag-row--last {
+.tag-row--last:has(.tag-add) {
   grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
 }
-.tag-row > .tag-pill {
+.tag-row > .tag-pill:not(.tag-add):not(.tag-more) {
   min-width: 0;
   max-width: 100%;
+  justify-self: stretch;
+}
+.tag-row > .tag-pill:not(.tag-add):not(.tag-more),
+.tag-row > .tag-pill.tag-add {
+  flex: unset;
 }
 .tag-pill.tag-more {
   cursor: pointer;
   color: var(--muted);
   padding: 2px 10px;
   font-size: 11px;
+  flex: 0 0 auto;
 }
 .tag-pill.tag-more:hover { color: var(--text); border-color: var(--accent); }
-.tags-cell .tag-pill.tag-add {
-  justify-self: start;
-  width: auto;
-  min-width: 0;
-  min-height: 0;
+.tags-cell .tag-pill.tag-add,
+.tag-row > .tag-pill.tag-add {
   padding: 3px 10px;
   line-height: 1.2;
-  font-size: 12px;
-  font-weight: 600;
-  background: #141924;
-  border: 1px solid var(--line);
-  border-radius: 999px;
   color: var(--muted);
   cursor: pointer;
+  justify-self: start;
+  width: auto;
 }
 .tag-picker-chip {
   flex: 0 0 auto;
@@ -5771,7 +5886,7 @@ document.addEventListener('keydown', function(ev) {{
   <div id="people_search_empty" style="display:none;color:var(--muted);font-size:13px;margin-bottom:8px;">{html.escape(_t("people.search.empty", lang))}</div>
   <table class="people-table" style="width:100%;border-collapse:collapse">
   <thead><tr>
-    <th class="sortable" style="text-align:left" data-sort-key="name" onclick="sortPeopleTable('name')">{html.escape(_t("people.col.name", lang))}</th>
+    {_people_name_column_header_html(lang)}
     <th class="sortable" style="text-align:left" data-sort-key="photos" onclick="sortPeopleTable('photos')">{html.escape(_t("people.col.photos", lang))}</th>
     <th class="sortable" style="text-align:left" data-sort-key="faces" onclick="sortPeopleTable('faces')">{html.escape(_t("people.col.faces", lang))}{_help_mark(_t("people.col.faces_help", lang))}</th>
     <th class="sortable" style="text-align:left" data-sort-key="consent" onclick="sortPeopleTable('consent')">{html.escape(_t("people.col.consent", lang))}</th>
@@ -5835,6 +5950,7 @@ function escapeHtmlAttr(s) {{
 let peopleAllTags = {all_tags_js};
 let peopleSortKey = 'name';
 let peopleSortDir = 'asc';
+let peopleNameSortPrimary = 'first';
 let tagPopoverSlug = '';
 let tagPopoverPersonTags = [];
 
@@ -5899,19 +6015,65 @@ function filterPeopleTable() {{
   if (empty) empty.style.display = (q && visible === 0) ? 'block' : 'none';
 }}
 
+function comparePeopleNameKeys(a, b) {{
+  const av = foldGermanUmlauts(String(a || '')).toLowerCase();
+  const bv = foldGermanUmlauts(String(b || '')).toLowerCase();
+  if (av < bv) return -1;
+  if (av > bv) return 1;
+  return 0;
+}}
+
+function updatePeopleNameHeader() {{
+  const th = document.querySelector('.people-table th.people-name-col');
+  if (!th) return;
+  th.classList.remove('sort-asc', 'sort-desc');
+  if (peopleSortKey === 'name') {{
+    th.classList.add(peopleSortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+  }}
+  th.querySelectorAll('.people-name-sort-part').forEach(function(btn) {{
+    const active = peopleSortKey === 'name' && btn.dataset.namePart === peopleNameSortPrimary;
+    btn.classList.toggle('sort-active', active);
+  }});
+}}
+
+function formatPersonDisplayName(tr) {{
+  const first = tr.dataset.displayFirst || '';
+  const last = tr.dataset.displayLast || '';
+  const fallback = tr.dataset.displayFallback || '';
+  if (peopleNameSortPrimary === 'last' && first && last) {{
+    return last + ', ' + first;
+  }}
+  if (first && last) return first + ' ' + last;
+  return fallback;
+}}
+
+function updatePeopleNameDisplay() {{
+  document.querySelectorAll('#people_table_body tr[data-display-first]').forEach(function(tr) {{
+    const label = tr.querySelector('.person-link-label');
+    if (label) label.textContent = formatPersonDisplayName(tr);
+  }});
+}}
+
 function applyPeopleTableSort() {{
   const tbody = document.getElementById('people_table_body');
   if (!tbody) return;
   const key = peopleSortKey;
-  const attr = {{
-    name: 'sortName',
-    photos: 'sortPhotos',
-    faces: 'sortFaces',
-    consent: 'sortConsent',
-    tags: 'sortTags',
-  }}[key] || 'sortName';
   const rows = Array.from(tbody.querySelectorAll('tr[data-search-text]'));
   rows.sort(function(a, b) {{
+    if (key === 'name') {{
+      const primary = peopleNameSortPrimary === 'last' ? 'sortLast' : 'sortFirst';
+      const secondary = peopleNameSortPrimary === 'last' ? 'sortFirst' : 'sortLast';
+      let cmp = comparePeopleNameKeys(a.dataset[primary], b.dataset[primary]);
+      if (cmp !== 0) return peopleSortDir === 'asc' ? cmp : -cmp;
+      cmp = comparePeopleNameKeys(a.dataset[secondary], b.dataset[secondary]);
+      return peopleSortDir === 'asc' ? cmp : -cmp;
+    }}
+    const attr = {{
+      photos: 'sortPhotos',
+      faces: 'sortFaces',
+      consent: 'sortConsent',
+      tags: 'sortTags',
+    }}[key] || 'sortFirst';
     let av = a.dataset[attr] || '';
     let bv = b.dataset[attr] || '';
     if (key === 'photos' || key === 'faces' || key === 'consent') {{
@@ -5926,11 +6088,33 @@ function applyPeopleTableSort() {{
     return 0;
   }});
   rows.forEach(function(r) {{ tbody.appendChild(r); }});
+  updatePeopleNameHeader();
+  updatePeopleNameDisplay();
   filterPeopleTable();
   initTagsOverflow();
 }}
 
+function sortPeopleName(ev, part) {{
+  if (ev) ev.stopPropagation();
+  if (peopleSortKey === 'name' && peopleNameSortPrimary === part) {{
+    peopleSortDir = (peopleSortDir === 'asc') ? 'desc' : 'asc';
+  }} else {{
+    peopleSortKey = 'name';
+    peopleNameSortPrimary = part;
+    peopleSortDir = 'asc';
+  }}
+  document.querySelectorAll('.people-table th.sortable:not(.people-name-col)').forEach(function(th) {{
+    th.classList.remove('sort-asc', 'sort-desc');
+  }});
+  updatePeopleNameHeader();
+  applyPeopleTableSort();
+}}
+
 function sortPeopleTable(key) {{
+  if (key === 'name') {{
+    sortPeopleName(null, peopleNameSortPrimary);
+    return;
+  }}
   if (peopleSortKey === key) {{
     peopleSortDir = (peopleSortDir === 'asc') ? 'desc' : 'asc';
   }} else {{
@@ -5943,6 +6127,7 @@ function sortPeopleTable(key) {{
       th.classList.add(peopleSortDir === 'asc' ? 'sort-asc' : 'sort-desc');
     }}
   }});
+  updatePeopleNameHeader();
   applyPeopleTableSort();
 }}
 
@@ -6787,7 +6972,7 @@ async function stopServer() {{
 }}
 
 (async function() {{
-  initTagsOverflow();
+  applyPeopleTableSort();
   window.addEventListener('resize', function() {{
     initTagsOverflow();
     repositionTagPicker();

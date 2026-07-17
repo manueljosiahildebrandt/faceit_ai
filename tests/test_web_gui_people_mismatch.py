@@ -16,6 +16,51 @@ def test_mismatch_tooltip() -> None:
     assert web_gui._mismatch_tooltip(146, 31) == "146 photos, 31 embeddings — re-register needed."
 
 
+def test_people_name_sort_keys_from_slug() -> None:
+    first, last = web_gui._people_name_sort_keys("", "", "ehmer_daniel")
+    assert first == "daniel"
+    assert last == "ehmer"
+
+
+def test_people_name_label_last_first() -> None:
+    assert web_gui._people_name_label("Isabell", "Andrä", "x", last_first=False) == "Isabell Andrä"
+    assert web_gui._people_name_label("Isabell", "Andrä", "x", last_first=True) == "Andrä, Isabell"
+
+
+def test_people_name_column_header_has_dual_sort() -> None:
+    html = web_gui._people_name_column_header_html("en")
+    assert "people-name-col" in html
+    assert 'data-name-part="first"' in html
+    assert 'data-name-part="last"' in html
+    assert "Name" in html
+    assert "Surname" in html
+    assert "people-name-sort-sep" in html
+    assert "name-sort-last" not in html
+
+
+def test_people_table_row_has_display_name_parts() -> None:
+    rows = [
+        {
+            "name": "andrae_isabell",
+            "display_name": "Isabell Andrä",
+            "photos": 1,
+            "embeddings": 1,
+            "status": "Registered",
+            "consent": True,
+            "registered": True,
+            "needs_reregister": False,
+            "tags": [],
+            "first_name": "Isabell",
+            "last_name": "Andrä",
+        }
+    ]
+    html = web_gui._people_table_body_html(rows)
+    assert 'data-display-first="Isabell"' in html
+    assert 'data-display-last="Andrä"' in html
+    assert "person-link-label" in html
+    assert "Isabell Andrä" in html
+
+
 def test_people_table_shows_mismatch_warning() -> None:
     rows = [
         {
@@ -112,4 +157,37 @@ def test_tags_cell_renders_picker_data_attrs() -> None:
     assert "tag-consent-allowed" in html
     assert "tag-consent-none" in html
     assert 'class="tags-cell"' in html
-    assert 'class="tags-cell-pills"' in html
+    assert html.count("tag-add-cell") == 1
+
+
+def _tags(n: int) -> list[dict[str, str]]:
+    return [{"tag": str(2000 + i), "consent": "blocked"} for i in range(n)]
+
+
+def test_tags_cell_tier_a_inline_add() -> None:
+    html = web_gui._tags_cell_html('"p"', _tags(3), "p")
+    assert "has-overflow" not in html
+    assert "tags-more-row" not in html
+    assert html.count("tag-add-cell") == 1
+    assert "tag-row--last" in html
+
+
+def test_tags_cell_tier_b_add_on_last_row() -> None:
+    html = web_gui._tags_cell_html('"p"', _tags(8), "p")
+    assert "has-overflow" not in html
+    assert html.count("tag-add-cell") == 1
+    assert html.count("tag-row--last") == 1
+
+
+def test_tags_cell_tier_c_add_in_more_row_only() -> None:
+    html = web_gui._tags_cell_html('"p"', _tags(10), "p")
+    assert "has-overflow" in html
+    assert "tags-more-row" in html
+    assert html.count("tag-add-cell") == 1
+    collapsed = html.split('tag-rows--collapsed">', 1)[1].split(
+        '</div><div class="tag-rows tag-rows--expanded">', 1
+    )[0]
+    expanded = html.split('tag-rows--expanded">', 1)[1].rsplit("</div></div>", 1)[0]
+    assert "tag-add-cell" not in collapsed
+    assert "tag-add-cell" not in expanded
+    assert "tag-add-cell" in html.split("tags-more-row")[1].split("tag-rows--collapsed")[0]

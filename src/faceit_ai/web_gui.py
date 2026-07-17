@@ -3533,19 +3533,19 @@ function setLang(code) {{
   <div class="form-row">
     <span class="form-label">{_label_with_help(_t("settings.lr.blocked_label", lang), _t("settings.lr.blocked_label_help", lang))}</span>
     <div class="form-control">
-      <select class="control-select" name="label_blocked"><option {'selected' if cfg['label_blocked']=='Rot' else ''}>Rot</option><option {'selected' if cfg['label_blocked']=='Gelb' else ''}>Gelb</option><option {'selected' if cfg['label_blocked']=='Gr\u00fcn' else ''}>Gr\u00fcn</option><option {'selected' if cfg['label_blocked']=='Blau' else ''}>Blau</option><option {'selected' if cfg['label_blocked']=='Lila' else ''}>Lila</option><option {'selected' if cfg['label_blocked']=='None' else ''}>None</option></select>
+      <select class="control-select" name="label_blocked"><option {'selected' if cfg['label_blocked']=='Rot' else ''}>Rot</option><option {'selected' if cfg['label_blocked']=='Gelb' else ''}>Gelb</option><option {'selected' if cfg['label_blocked']=='Grün' else ''}>Grün</option><option {'selected' if cfg['label_blocked']=='Blau' else ''}>Blau</option><option {'selected' if cfg['label_blocked']=='Lila' else ''}>Lila</option><option {'selected' if cfg['label_blocked']=='None' else ''}>None</option></select>
     </div>
   </div>
   <div class="form-row">
     <span class="form-label">{_label_with_help(_t("settings.lr.review_label", lang), _t("settings.lr.review_label_help", lang))}</span>
     <div class="form-control">
-      <select class="control-select" name="label_review"><option {'selected' if cfg['label_review']=='Rot' else ''}>Rot</option><option {'selected' if cfg['label_review']=='Gelb' else ''}>Gelb</option><option {'selected' if cfg['label_review']=='Gr\u00fcn' else ''}>Gr\u00fcn</option><option {'selected' if cfg['label_review']=='Blau' else ''}>Blau</option><option {'selected' if cfg['label_review']=='Lila' else ''}>Lila</option><option {'selected' if cfg['label_review']=='None' else ''}>None</option></select>
+      <select class="control-select" name="label_review"><option {'selected' if cfg['label_review']=='Rot' else ''}>Rot</option><option {'selected' if cfg['label_review']=='Gelb' else ''}>Gelb</option><option {'selected' if cfg['label_review']=='Grün' else ''}>Grün</option><option {'selected' if cfg['label_review']=='Blau' else ''}>Blau</option><option {'selected' if cfg['label_review']=='Lila' else ''}>Lila</option><option {'selected' if cfg['label_review']=='None' else ''}>None</option></select>
     </div>
   </div>
   <div class="form-row">
     <span class="form-label">{_label_with_help(_t("settings.lr.ok_label", lang), _t("settings.lr.ok_label_help", lang))}</span>
     <div class="form-control">
-      <select class="control-select" name="label_ok"><option {'selected' if cfg['label_ok']=='Rot' else ''}>Rot</option><option {'selected' if cfg['label_ok']=='Gelb' else ''}>Gelb</option><option {'selected' if cfg['label_ok']=='Gr\u00fcn' else ''}>Gr\u00fcn</option><option {'selected' if cfg['label_ok']=='Blau' else ''}>Blau</option><option {'selected' if cfg['label_ok']=='Lila' else ''}>Lila</option><option {'selected' if cfg['label_ok']=='None' else ''}>None</option></select>
+      <select class="control-select" name="label_ok"><option {'selected' if cfg['label_ok']=='Rot' else ''}>Rot</option><option {'selected' if cfg['label_ok']=='Gelb' else ''}>Gelb</option><option {'selected' if cfg['label_ok']=='Grün' else ''}>Grün</option><option {'selected' if cfg['label_ok']=='Blau' else ''}>Blau</option><option {'selected' if cfg['label_ok']=='Lila' else ''}>Lila</option><option {'selected' if cfg['label_ok']=='None' else ''}>None</option></select>
     </div>
   </div>
   <details class="form-advanced">

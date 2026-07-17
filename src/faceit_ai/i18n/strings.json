@@ -139,6 +139,10 @@
     "de": "Protokoll konnte nicht in die Zwischenablage kopiert werden",
     "en": "Could not copy log to clipboard"
   },
+  "analyze.alert.folder_not_found": {
+    "de": "Der angegebene Ordner existiert nicht oder ist nicht erreichbar. Pfad prüfen (z. B. F:\\Fotos\\Event).",
+    "en": "That folder does not exist or is not accessible. Check the path (e.g. F:\\Photos\\Event)."
+  },
   "analyze.alert.no_dest": {
     "de": "Bitte ein Archivziel (NAS-Pfad) für diesen Ordner angeben.",
     "en": "Enter an archive destination (NAS path) for this folder."

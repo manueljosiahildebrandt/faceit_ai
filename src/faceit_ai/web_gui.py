@@ -458,6 +458,62 @@ def _get_insightface_backend(settings=None):
         return _INSIGHTFACE_BACKEND
 
 
+def _normalize_folder_path(raw: str) -> str:
+    """Strip quotes/whitespace from pasted or typed folder paths."""
+    text = (raw or "").strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in ('"', "'"):
+        text = text[1:-1].strip()
+    if not text:
+        return ""
+    try:
+        return str(Path(text).expanduser())
+    except (OSError, ValueError):
+        return text
+
+
+def _folder_picker_client_js() -> str:
+    return """
+function normalizeFolderPath(s) {
+  s = String(s || '').trim();
+  if (s.length >= 2 && s.charAt(0) === s.charAt(s.length - 1) && (s.charAt(0) === '"' || s.charAt(0) === "'")) {
+    s = s.slice(1, -1).trim();
+  }
+  return s;
+}
+
+async function pickFolder(targetId) {
+  try {
+    const r = await fetch('/api/pick_folder?target=' + encodeURIComponent(targetId || ''));
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    if (!d.ok) {
+      if (d.error) alert(d.error);
+      return null;
+    }
+    const el = document.getElementById(targetId);
+    const path = normalizeFolderPath(d.path || '');
+    if (el) el.value = path;
+    try { if (path) localStorage.setItem('faceit_' + targetId, path); } catch (e) {}
+    if (typeof syncAnalyzeClearButton === 'function') syncAnalyzeClearButton(targetId);
+    if (typeof syncClearButton === 'function') syncClearButton(targetId);
+    if (targetId === 'people_root_people' && path) {
+      await fetch('/api/set_people_root', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({people_root: path}).toString()
+      });
+      location.reload();
+      return path;
+    }
+    return path;
+  } catch (e) {
+    alert(t('common.alert.picker_failed') + (e && e.message ? ': ' + e.message : ''));
+    return null;
+  }
+}
+"""
+
+
 def _pick_folder_via_osascript(prompt: str) -> str:
     # Escape for AppleScript double-quoted string.
     safe = prompt.replace("\\", "\\\\").replace('"', '\\"')
@@ -745,9 +801,7 @@ def _pick_folder_via_tk(prompt: str) -> str:
     return str(path)
 
 
-_WINDOWS_MEDIA_PICK_TARGETS = frozenset(
-    {"search_folder", "review_folder", "ingest_destination"}
-)
+_WINDOWS_MEDIA_PICK_TARGETS = frozenset({"review_folder"})
 
 
 def _pick_folder(*, lang: str = DEFAULT_LANG, target: str = "") -> str:
@@ -759,17 +813,23 @@ def _pick_folder(*, lang: str = DEFAULT_LANG, target: str = "") -> str:
     else:
         prompt = _t("osascript.pick_folder", lang)
     if system == "Darwin":
-        return _pick_folder_via_osascript(
-            prompt if mode == "dir" else _t("osascript.pick_folder", lang)
+        return _normalize_folder_path(
+            _pick_folder_via_osascript(
+                prompt if mode == "dir" else _t("osascript.pick_folder", lang)
+            )
         )
     if system == "Windows":
-        # No legacy FolderBrowserDialog fallback — cancel must stay cancel.
-        return _pick_folder_via_windows_dialog(prompt, mode=mode)
+        try:
+            return _normalize_folder_path(_pick_folder_via_windows_dialog(prompt, mode=mode))
+        except (OSError, subprocess.CalledProcessError, subprocess.SubprocessError):
+            if mode == "dir":
+                return _normalize_folder_path(_pick_folder_via_tk(prompt))
+            raise
     # Linux / other: prefer zenity, then tkinter.
     try:
-        return _pick_folder_via_zenity(prompt)
+        return _normalize_folder_path(_pick_folder_via_zenity(prompt))
     except (FileNotFoundError, OSError, subprocess.SubprocessError):
-        return _pick_folder_via_tk(prompt)
+        return _normalize_folder_path(_pick_folder_via_tk(prompt))
 
 
 # analyze_photos now prints per-metric lines, e.g.:
@@ -4471,6 +4531,9 @@ function setLang(code) {{
   location.reload();
 }}
 </script>
+<script>
+{_folder_picker_client_js()}
+</script>
 """
 
     def _send_html(self, body: str, status: int = 200) -> None:
@@ -4533,6 +4596,9 @@ function setLang(code) {{
                     {"ok": False, "error": _t("api.picker_cancelled", self._lang(), code=e.returncode)}
                 )
             except (OSError, subprocess.SubprocessError) as e:
+                self._send_json({"ok": False, "error": str(e)})
+            except Exception as e:
+                logging.getLogger("faceit_ai").exception("pick_folder failed")
                 self._send_json({"ok": False, "error": str(e)})
             return
         if parsed.path == "/api/test_db":
@@ -4780,21 +4846,6 @@ function setLang(code) {{
 </form>
 </div>
 <script>
-async function pickFolder(targetId) {{
-  const r = await fetch('/api/pick_folder?target=' + encodeURIComponent(targetId || ''));
-  const d = await r.json();
-  if (!d.ok) {{
-    alert(d.error || t('common.alert.picker_failed'));
-    return;
-  }}
-  const el = document.getElementById(targetId);
-  if (el) {{
-    el.value = d.path || '';
-    try {{ localStorage.setItem('faceit_' + targetId, el.value); }} catch (e) {{}}
-  }}
-  syncClearButton(targetId);
-}}
-
 async function testDb() {{
   const el = document.getElementById('db_test_result');
   const urlEl = document.getElementById('database_url');
@@ -5051,17 +5102,6 @@ function escapeHtmlAttr(s) {{
 
 function reviewKindLabel() {{
   return t(reviewStatus === 'blocked' ? 'review.tab.blocked' : 'review.tab.review');
-}}
-
-async function pickFolder(targetId) {{
-  const r = await fetch('/api/pick_folder?target=' + encodeURIComponent(targetId || ''));
-  const d = await r.json();
-  if (!d.ok) {{
-    alert(d.error || t('common.alert.picker_failed'));
-    return;
-  }}
-  const el = document.getElementById(targetId);
-  if (el) el.value = d.path || '';
 }}
 
 async function loadReviewList(keepModal) {{
@@ -6938,25 +6978,6 @@ document.addEventListener('keydown', function(e) {{
   if (e.key === 'ArrowRight') {{ e.preventDefault(); galleryNav(1); }}
 }});
 
-async function pickFolder(targetId) {{
-  const r = await fetch('/api/pick_folder?target=' + encodeURIComponent(targetId || ''));
-  const d = await r.json();
-  if (!d.ok) {{
-    alert(d.error || t('common.alert.picker_failed'));
-    return;
-  }}
-  const el = document.getElementById(targetId);
-  if (el) el.value = d.path || '';
-  if (targetId === 'people_root_people' && d.path) {{
-    await fetch('/api/set_people_root', {{
-      method: 'POST',
-      headers: {{'Content-Type': 'application/x-www-form-urlencoded'}},
-      body: new URLSearchParams({{people_root: d.path}}).toString()
-    }});
-    location.reload();
-  }}
-}}
-
 async function stopServer() {{
   if (!confirm(t('common.confirm.stop_server'))) return;
   const r = await fetch('/shutdown', {{ method: 'POST' }});
@@ -7113,20 +7134,6 @@ async function stopServer() {{
 </details>
 </fieldset>
 <script>
-async function pickFolder(targetId) {{
-  const r = await fetch('/api/pick_folder?target=' + encodeURIComponent(targetId || ''));
-  const d = await r.json();
-  if (!d.ok) {{
-    alert(d.error || t('common.alert.picker_failed'));
-    return;
-  }}
-  const el = document.getElementById(targetId);
-  if (el) {{
-    el.value = d.path || '';
-    syncAnalyzeClearButton(targetId);
-  }}
-}}
-
 function syncAnalyzeClearButton(inputId) {{
   const input = document.getElementById(inputId);
   const btn = document.querySelector('#analyze_form .input-clear[data-clear-for="' + inputId + '"]');
@@ -7138,7 +7145,13 @@ function initAnalyzeClearButtons() {{
   ['search_folder', 'ingest_destination'].forEach(function(id) {{
     const el = document.getElementById(id);
     if (!el) return;
-    el.addEventListener('input', function() {{ syncAnalyzeClearButton(id); }});
+    const normalize = function() {{
+      el.value = normalizeFolderPath(el.value);
+      syncAnalyzeClearButton(id);
+    }};
+    el.addEventListener('input', normalize);
+    el.addEventListener('change', normalize);
+    el.addEventListener('paste', function() {{ setTimeout(normalize, 0); }});
     syncAnalyzeClearButton(id);
   }});
   document.querySelectorAll('#analyze_form .input-clear[data-clear-for]').forEach(function(btn) {{
@@ -7154,6 +7167,14 @@ function initAnalyzeClearButtons() {{
 }}
 
 initAnalyzeClearButtons();
+
+(function() {{
+  const params = new URLSearchParams(location.search);
+  if (params.get('folder_error') === '1') {{
+    alert(t('analyze.alert.folder_not_found'));
+    history.replaceState(null, '', location.pathname);
+  }}
+}})();
 
 async function copyTechnicalLog() {{
   const el = document.getElementById('log');
@@ -7262,16 +7283,21 @@ async function toggleAnalyze() {{
     updateAnalyzeToggle(true);
     return;
   }}
-  const folder = (document.getElementById('search_folder') || {{}}).value || '';
+  const folderEl = document.getElementById('search_folder');
+  let folder = folderEl ? normalizeFolderPath(folderEl.value) : '';
+  if (folderEl) folderEl.value = folder;
   if (!folder.trim()) {{
     alert(t('analyze.alert.no_folder'));
     return;
   }}
   const ingestDestEl = document.getElementById('ingest_destination');
-  if (ingestDestEl && !ingestDestEl.value.trim()) {{
-    alert(t('analyze.alert.no_dest'));
-    ingestDestEl.focus();
-    return;
+  if (ingestDestEl) {{
+    ingestDestEl.value = normalizeFolderPath(ingestDestEl.value);
+    if (!ingestDestEl.value.trim()) {{
+      alert(t('analyze.alert.no_dest'));
+      ingestDestEl.focus();
+      return;
+    }}
   }}
   clearAnalyzeStatus();
   document.getElementById('analyze_form').submit();
@@ -7508,7 +7534,12 @@ setInterval(poll, 1000); poll();
                 STATE.add_log("[warn] analyze already running — ignoring duplicate start")
                 self._redirect_home()
                 return
-            folder = form.get("folder", "")
+            folder = _normalize_folder_path(form.get("folder", ""))
+            folder_path = Path(folder) if folder else None
+            if folder_path is None or not folder_path.is_dir():
+                STATE.add_log(f"[error] Analyze folder not found: {folder!r}")
+                self._redirect("/?folder_error=1")
+                return
             STATE.set_last_paths(analyze_folder=folder)
             cfg = _read_config_form()
             # Orphaned claim after Stop/kill (CLI finally may not run) — free this host only.
@@ -7517,7 +7548,7 @@ setInterval(poll, 1000); poll();
             )
             ingest_dest = ""
             if cfg.get("ingest_enabled"):
-                ingest_dest = form.get("ingest_destination", "").strip()
+                ingest_dest = _normalize_folder_path(form.get("ingest_destination", ""))
                 if not ingest_dest:
                     STATE.add_log(
                         "[warn] Archive copy enabled but no destination path — analyze will skip archive"

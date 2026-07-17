@@ -6,30 +6,40 @@ def test_resolve_onnx_providers_auto_skips_coreml() -> None:
     out = resolve_onnx_providers(("auto",))
     assert out[0] in (
         "CUDAExecutionProvider",
-        "DmlExecutionProvider",
         "CPUExecutionProvider",
     )
     assert "CoreMLExecutionProvider" not in out
 
 
-def test_resolve_onnx_providers_auto_prefers_dml_over_cpu(monkeypatch) -> None:
+def test_resolve_onnx_providers_auto_prefers_cuda_over_cpu(monkeypatch) -> None:
+    monkeypatch.setattr(providers_mod, "onnxruntime_is_healthy", lambda: True)
+    monkeypatch.setattr(
+        providers_mod,
+        "available_onnx_providers",
+        lambda: ("CUDAExecutionProvider", "CPUExecutionProvider"),
+    )
+    assert resolve_onnx_providers(("auto",)) == ("CUDAExecutionProvider",)
+
+
+def test_resolve_onnx_providers_auto_uses_cpu_when_only_cpu(monkeypatch) -> None:
+    monkeypatch.setattr(providers_mod, "onnxruntime_is_healthy", lambda: True)
+    monkeypatch.setattr(
+        providers_mod,
+        "available_onnx_providers",
+        lambda: ("CPUExecutionProvider",),
+    )
+    assert resolve_onnx_providers(("auto",)) == ("CPUExecutionProvider",)
+
+
+def test_resolve_onnx_providers_auto_ignores_dml_for_auto(monkeypatch) -> None:
+    """Stock ORT path: auto prefers CUDA/CPU, not DirectML."""
     monkeypatch.setattr(providers_mod, "onnxruntime_is_healthy", lambda: True)
     monkeypatch.setattr(
         providers_mod,
         "available_onnx_providers",
         lambda: ("DmlExecutionProvider", "CPUExecutionProvider"),
     )
-    assert resolve_onnx_providers(("auto",)) == ("DmlExecutionProvider",)
-
-
-def test_resolve_onnx_providers_auto_prefers_cuda_over_dml(monkeypatch) -> None:
-    monkeypatch.setattr(providers_mod, "onnxruntime_is_healthy", lambda: True)
-    monkeypatch.setattr(
-        providers_mod,
-        "available_onnx_providers",
-        lambda: ("DmlExecutionProvider", "CUDAExecutionProvider", "CPUExecutionProvider"),
-    )
-    assert resolve_onnx_providers(("auto",)) == ("CUDAExecutionProvider",)
+    assert resolve_onnx_providers(("auto",)) == ("CPUExecutionProvider",)
 
 
 def test_resolve_onnx_providers_explicit_cpu() -> None:

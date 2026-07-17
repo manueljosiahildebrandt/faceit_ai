@@ -4,10 +4,9 @@ from __future__ import annotations
 
 # CoreML is intentionally omitted: InsightFace SCRFD (buffalo_l det_10g) hits a
 # known ONNX Runtime CoreML shape-rank mismatch at detect time and aborts the run.
-# Preference: NVIDIA CUDA when present, else Windows DirectML (any DX12 GPU), else CPU.
+# Prefer CUDA when present; otherwise CPU (stock onnxruntime).
 _PREFERENCE = (
     "CUDAExecutionProvider",
-    "DmlExecutionProvider",
     "CPUExecutionProvider",
 )
 
@@ -25,9 +24,9 @@ _GPU_PROVIDERS = frozenset(
 
 _BROKEN_ORT_HINT = (
     "onnxruntime is installed but broken (missing InferenceSession). "
-    "On Windows, repair with:\n"
+    "Repair with:\n"
     "  python -m pip uninstall -y onnxruntime onnxruntime-gpu onnxruntime-directml\n"
-    "  python -m pip install \"onnxruntime-directml>=1.17\"\n"
+    "  python -m pip install \"onnxruntime>=1.17\"\n"
     "Then restart Faceit AI."
 )
 
@@ -70,7 +69,7 @@ def device_kind(providers: tuple[str, ...] | list[str]) -> str:
 def resolve_onnx_providers(requested: tuple[str, ...] | list[str]) -> tuple[str, ...]:
     """Map YAML ``providers`` to a usable ONNX Runtime provider list.
 
-    - ``auto`` (or empty) picks CUDA, then DirectML, else CPU.
+    - ``auto`` (or empty) picks CUDA when available, else CPU.
       CoreML is skipped (incompatible with InsightFace SCRFD dynamic shapes).
     - Explicit names are kept when available; CoreML is dropped with a warning;
       falls back to CPU if nothing usable remains.

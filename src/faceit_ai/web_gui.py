@@ -510,6 +510,8 @@ def _windows_foreground_owner() -> tuple[object, object]:
 
     user32 = ctypes.windll.user32
     kernel32 = ctypes.windll.kernel32
+    # Python 3.11 wintypes omits some GDI handle aliases (HCURSOR, HBRUSH, …).
+    gdi_handle = getattr(wintypes, "HCURSOR", wintypes.HANDLE)
 
     class WNDCLASSW(ctypes.Structure):
         _fields_ = [
@@ -518,9 +520,9 @@ def _windows_foreground_owner() -> tuple[object, object]:
             ("cbClsExtra", ctypes.c_int),
             ("cbWndExtra", ctypes.c_int),
             ("hInstance", wintypes.HINSTANCE),
-            ("hIcon", wintypes.HICON),
-            ("hCursor", wintypes.HCURSOR),
-            ("hbrBackground", wintypes.HBRUSH),
+            ("hIcon", getattr(wintypes, "HICON", gdi_handle)),
+            ("hCursor", gdi_handle),
+            ("hbrBackground", getattr(wintypes, "HBRUSH", gdi_handle)),
             ("lpszMenuName", wintypes.LPCWSTR),
             ("lpszClassName", wintypes.LPCWSTR),
         ]

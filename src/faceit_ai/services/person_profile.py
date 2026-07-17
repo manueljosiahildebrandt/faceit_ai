@@ -21,6 +21,25 @@ TAG_CONSENT_CYCLE: tuple[TagConsent, ...] = ("blocked", "allowed", "none")
 
 _UNSAFE_SLUG_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
 
+# Folder names stay ASCII-safe on Windows; display names keep real umlauts in person.json.
+_GERMAN_UMLAUT_FOLDS: tuple[tuple[str, str], ...] = (
+    ("ä", "ae"),
+    ("Ä", "ae"),
+    ("ö", "oe"),
+    ("Ö", "oe"),
+    ("ü", "ue"),
+    ("Ü", "ue"),
+    ("ß", "ss"),
+)
+
+
+def fold_german_umlauts(text: str) -> str:
+    """Map ä/ö/ü/ß to ae/oe/ue/ss for folder slugs (display names keep originals)."""
+    out = text
+    for src, dst in _GERMAN_UMLAUT_FOLDS:
+        out = out.replace(src, dst)
+    return out
+
 
 @dataclass
 class PersonTag:
@@ -109,15 +128,20 @@ def default_display_name(first_name: str, last_name: str) -> str:
 
 
 def slug_part(text: str) -> str:
-    """Sanitize one segment of a folder slug (lowercase)."""
-    t = _UNSAFE_SLUG_RE.sub("", text.strip())
+    """Sanitize one segment of a folder slug (umlauts folded, lowercase)."""
+    t = fold_german_umlauts(text.strip())
+    t = _UNSAFE_SLUG_RE.sub("", t)
     t = re.sub(r"\s+", "-", t)
     t = t.strip(". ").lower()
     return t
 
 
 def folder_slug(nachname: str, vorname: str) -> str:
-    """Build folder slug: nachname_vorname (spaces in Vorname -> hyphens, all lowercase)."""
+    """Build folder slug: nachname_vorname (spaces in Vorname -> hyphens, all lowercase).
+
+    Umlauts in the input become ae/oe/ue/ss in the folder name; callers should keep
+    the original spelling in first_name/last_name/display_name (person.json).
+    """
     last = slug_part(nachname)
     first = slug_part(vorname.replace(" ", "-"))
     if not last or not first:

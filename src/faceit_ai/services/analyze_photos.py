@@ -39,6 +39,7 @@ from faceit_ai.vision.image_loader import (
 from faceit_ai.services.collect_matches import collect_strong_matches_under_folder
 from faceit_ai.services.flagged_export import export_flagged_under_folder
 from faceit_ai.services.folder_ingest import run_folder_ingest
+from faceit_ai.services.processing_runs import heartbeat
 from faceit_ai.vision.insightface_backend import InsightFaceBackend
 from faceit_ai.vision.matcher import match_embedding
 
@@ -84,6 +85,7 @@ def run_analyze(
     collect_crop: bool | None = None,
     ingest_dest_root: Path | None = None,
     ingest_order: IngestOrder = "copy_then_analyze",
+    run_id: int | None = None,
 ) -> list[dict[str, Any]]:
     global _cancel_requested, _stopped_early
     _cancel_requested = False
@@ -165,7 +167,14 @@ def run_analyze(
         smoothing=0.05,
     )
 
+    last_heartbeat = 0.0
     for path in path_iter:
+        if run_id is not None and (time.monotonic() - last_heartbeat) >= 15.0:
+            try:
+                heartbeat(session_factory, run_id)
+            except Exception:
+                log.debug("processing_run heartbeat failed", exc_info=True)
+            last_heartbeat = time.monotonic()
         if _cancel_requested:
             _stopped_early = True
             log.warning(

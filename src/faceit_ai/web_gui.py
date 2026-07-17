@@ -568,7 +568,8 @@ def _map_line_to_user_state(line: str) -> None:
 
 
 _RE_TQDM_PROGRESS = re.compile(
-    r"(?:^|\s)(?:\d{1,3}%\|.*file/s.*|Photos:\s*\d{1,3}%\|.*file/s.*)",
+    # tqdm Photos bar (rate may be "?file/s", "it/s", or missing while buffered).
+    r"(?:Photos:\s*)?\d{1,3}%\|",
     re.IGNORECASE,
 )
 # e.g. Photos:  52%|█████▏    | 13/25 [00:09<00:09,  1.20file/s, DJI_0178.DNG]
@@ -602,6 +603,26 @@ def _finalize_progress_line(line: str, *, success: bool) -> str:
     prefix = m.group("prefix")
     rest = m.group("rest") or ""
     return f"{prefix}100%|{'█' * 10}| {tot}/{tot}{rest}"
+
+
+def _cli_env() -> dict[str, str]:
+    """Env for CLI subprocesses — unbuffered so Progress polls see tqdm live."""
+    env = dict(os.environ)
+    env["PYTHONUNBUFFERED"] = "1"
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    return env
+
+
+def _popen_cli(cmd: list[str], *, start_new_session: bool = False) -> subprocess.Popen[str]:
+    return subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        env=_cli_env(),
+        start_new_session=start_new_session,
+    )
 
 
 def _send_stop_signal(proc: subprocess.Popen[str] | None) -> None:
@@ -747,14 +768,7 @@ def _run_commands(title: str, commands: list[list[str]], *, skip_reset: bool = F
                         STATE.set_stage("Preparing")
                         STATE.add_activity("Preparing analysis run...")
                         STATE.set_progress_line("")
-                proc = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    bufsize=1,
-                    start_new_session=True,
-                )
+                proc = _popen_cli(cmd, start_new_session=True)
                 STATE.set_current_proc(proc)
                 assert proc.stdout is not None
                 for line in proc.stdout:
@@ -908,13 +922,7 @@ def _reregister_person(name: str, *, lang: str = DEFAULT_LANG) -> dict[str, obje
                 "--no-consent",
             ]
             STATE.add_log("$ " + " ".join(cmd))
-            proc = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-            )
+            proc = _popen_cli(cmd)
             assert proc.stdout is not None
             for line in proc.stdout:
                 t = line.rstrip("\n")
@@ -994,14 +1002,7 @@ def _reregister_all_people(*, lang: str = DEFAULT_LANG) -> dict[str, object]:
                     "--no-consent",
                 ]
                 STATE.add_log("$ " + " ".join(cmd))
-                proc = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    bufsize=1,
-                    start_new_session=True,
-                )
+                proc = _popen_cli(cmd, start_new_session=True)
                 STATE.set_current_proc(proc)
                 assert proc.stdout is not None
                 for line in proc.stdout:
@@ -1179,13 +1180,7 @@ def _scan_people_plan_and_start(root_text: str, *, lang: str = DEFAULT_LANG) -> 
                 STATE.set_stage(f"Registering {name}")
                 STATE.add_activity(f"Registering {name} from folder…")
                 STATE.add_log("$ " + " ".join(cmd))
-                proc = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    bufsize=1,
-                )
+                proc = _popen_cli(cmd)
                 assert proc.stdout is not None
                 for line in proc.stdout:
                     t = line.rstrip("\n")
@@ -2590,7 +2585,8 @@ def _get_active_runs_cached() -> list[dict[str, object]]:
         settings = load_settings()
         _, session_factory = create_engine_and_session_factory(settings.database_url)
         runs = list_active_runs(session_factory)
-    except Exception:
+    except Exception as e:
+        logging.getLogger("faceit_ai").warning("active runs query failed: %s", e)
         runs = []
     with _ACTIVE_RUNS_LOCK:
         _ACTIVE_RUNS_CACHE["ts"] = now
@@ -4873,8 +4869,20 @@ function sortPeopleTable(key) {{
   applyPeopleTableSort();
 }}
 
+function foldGermanUmlauts(s) {{
+  return String(s || '')
+    .replace(/ä/g, 'ae').replace(/Ä/g, 'ae')
+    .replace(/ö/g, 'oe').replace(/Ö/g, 'oe')
+    .replace(/ü/g, 'ue').replace(/Ü/g, 'ue')
+    .replace(/ß/g, 'ss');
+}}
+
 function slugPreviewFromNames(last, first) {{
-  const clean = function(s) {{ return String(s || '').trim().replace(/[<>:"/\\\\|?*\\x00-\\x1f]+/g, '').toLowerCase(); }};
+  const clean = function(s) {{
+    return foldGermanUmlauts(String(s || '').trim())
+      .replace(/[<>:"/\\\\|?*\\x00-\\x1f]+/g, '')
+      .toLowerCase();
+  }};
   const l = clean(last);
   const f = clean(first).replace(/\\s+/g, '-');
   if (!l || !f) return t('people.dash');

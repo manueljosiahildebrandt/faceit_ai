@@ -7,6 +7,7 @@ same database, the database itself arbitrates who owns a folder - no lock files 
 from __future__ import annotations
 
 import logging
+import re
 import socket
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -33,8 +34,51 @@ def this_host() -> str:
         return "unknown-host"
 
 
+def folder_claim_key(folder: Path | str) -> str:
+    """Stable cross-OS key so Mac/Windows mounts of the same share share one claim.
+
+    Examples that must collide:
+    - ``/Volumes/Foto/jobs/wedding`` (macOS)
+    - ``Z:\\jobs\\wedding`` (Windows drive letter)
+    - ``\\\\nas\\Foto\\jobs\\wedding`` (UNC)
+    """
+    text = str(folder).strip().replace("\\", "/")
+
+    # Windows drive letter (handle even when this code runs on macOS/Linux).
+    drive = re.match(r"^([A-Za-z]):(/.*)?$", text)
+    if drive:
+        rest = (drive.group(2) or "/").strip("/")
+        parts = [p for p in rest.split("/") if p]
+        return "/" + "/".join(p.lower() for p in parts) if parts else "/"
+
+    # UNC //server/share/rest — drop server + share.
+    if text.startswith("//"):
+        bits = [p for p in text.split("/") if p]
+        parts = bits[2:] if len(bits) >= 2 else bits
+        return "/" + "/".join(p.lower() for p in parts) if parts else "/"
+
+    raw = Path(folder).expanduser()
+    try:
+        p = raw.resolve()
+    except OSError:
+        p = raw
+    parts = [str(x) for x in p.parts if str(x) not in ("/", "\\")]
+    if not parts:
+        return "/"
+    # macOS network / local volume mounts: /Volumes/<name>/...
+    if len(parts) >= 2 and parts[0].lower() == "volumes":
+        parts = parts[2:]
+    # Linux common automount roots: /mnt/<label>/... or /media/<user>/<label>/...
+    elif len(parts) >= 2 and parts[0].lower() == "mnt":
+        parts = parts[2:]
+    elif len(parts) >= 3 and parts[0].lower() == "media":
+        parts = parts[3:]
+    key = "/" + "/".join(part.strip("/").lower() for part in parts if part)
+    return key if key != "/" else str(p).replace("\\", "/").lower()
+
+
 def _normalize(folder: Path | str) -> str:
-    return str(Path(folder).expanduser().resolve())
+    return folder_claim_key(folder)
 
 
 @dataclass(frozen=True)
@@ -75,6 +119,10 @@ def claim_folder(
 ) -> ClaimResult:
     """Try to claim a folder for analysis. Returns ClaimResult(claimed=False) if busy."""
     folder_path = _normalize(folder)
+    try:
+        display_path = str(Path(folder).expanduser().resolve())
+    except OSError:
+        display_path = str(Path(folder).expanduser())
     host = host or this_host()
 
     try:
@@ -100,6 +148,7 @@ def claim_folder(
                 folder_path=folder_path,
                 host=host,
                 status="running",
+                message=display_path,
             )
             session.add(run)
             session.flush()
@@ -196,8 +245,11 @@ def list_active_runs(session_factory: sessionmaker[Any]) -> list[dict[str, Any]]
             out.append(
                 {
                     "id": int(row.id),
-                    "folder": row.folder_path,
-                    "folder_name": Path(row.folder_path).name or row.folder_path,
+                    "folder": row.message or row.folder_path,
+                    "folder_name": Path(row.message or row.folder_path).name
+                    or Path(row.folder_path).name
+                    or row.folder_path,
+                    "folder_key": row.folder_path,
                     "host": row.host,
                     "status": row.status,
                     "started_at": ref.isoformat() if ref else None,

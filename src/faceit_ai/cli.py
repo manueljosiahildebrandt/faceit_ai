@@ -189,6 +189,7 @@ def analyze_photos_cli(
             collect_crop=collect_crop,
             ingest_dest_root=ingest_dest_root,
             ingest_order=eff_ingest_order,
+            run_id=claim.run_id,
         )
         if was_analyze_stopped_early():
             run_status = "cancelled"

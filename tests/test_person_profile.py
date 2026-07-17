@@ -30,6 +30,12 @@ def test_folder_slug_spaces_to_hyphen() -> None:
     assert folder_slug("Ehmer", "Anna Maria") == "ehmer_anna-maria"
 
 
+def test_folder_slug_folds_german_umlauts() -> None:
+    assert folder_slug("Müller", "Jörg") == "mueller_joerg"
+    assert folder_slug("Weiß", "Änne") == "weiss_aenne"
+    assert folder_slug("Öztürk", "Günther") == "oeztuerk_guenther"
+
+
 def test_existing_person_folder(tmp_path: Path) -> None:
     root = tmp_path / "people"
     root.mkdir()

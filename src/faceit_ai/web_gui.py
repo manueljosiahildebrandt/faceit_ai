@@ -424,8 +424,142 @@ def _pick_folder_via_osascript(prompt: str) -> str:
     return subprocess.check_output(["osascript", "-e", script], text=True).strip()
 
 
+def _windows_guid(guid_string: str) -> object:
+    """COM GUID struct from '{...}' string (Windows only)."""
+    import ctypes
+    from ctypes import wintypes
+
+    class GUID(ctypes.Structure):
+        _fields_ = [
+            ("Data1", ctypes.c_ulong),
+            ("Data2", ctypes.c_ushort),
+            ("Data3", ctypes.c_ushort),
+            ("Data4", ctypes.c_ubyte * 8),
+        ]
+
+    guid = GUID()
+    hr = ctypes.windll.ole32.CLSIDFromString(wintypes.LPCWSTR(guid_string), ctypes.byref(guid))
+    if hr != 0:
+        raise OSError(f"CLSIDFromString failed: 0x{hr & 0xFFFFFFFF:08X}")
+    return guid
+
+
+def _windows_com_release(ptr: object) -> None:
+    import ctypes
+
+    if not ptr:
+        return
+    vtable = ctypes.cast(
+        ctypes.cast(ptr, ctypes.POINTER(ctypes.c_void_p))[0],
+        ctypes.POINTER(ctypes.c_void_p * 3),
+    ).contents
+    release = ctypes.WINFUNCTYPE(ctypes.c_ulong, ctypes.c_void_p)(vtable[2])
+    release(ptr)
+
+
+def _pick_folder_via_windows_explorer(prompt: str) -> str:
+    """Modern Explorer-style folder dialog (IFileOpenDialog + FOS_PICKFOLDERS)."""
+    import ctypes
+    from ctypes import wintypes
+
+    clsid_file_open = _windows_guid("{DC1C5A9C-E88A-4DDE-A5A1-60F82A20AEF7}")
+    iid_file_open = _windows_guid("{D57C7288-D4AD-4768-BE02-9D969532D960}")
+
+    fos_pickfolders = 0x00000020
+    fos_forcefilesystem = 0x00000040
+    fos_nochagedir = 0x00000008
+    sigdn_filesystem = 0x80058000
+    # HRESULT_FROM_WIN32(ERROR_CANCELLED)
+    hresult_cancelled = 0x800704C7
+
+    ole32 = ctypes.windll.ole32
+    ole32.CoInitialize(None)
+    dialog = ctypes.c_void_p()
+    try:
+        hr = ole32.CoCreateInstance(
+            ctypes.byref(clsid_file_open),
+            None,
+            1,  # CLSCTX_INPROC_SERVER
+            ctypes.byref(iid_file_open),
+            ctypes.byref(dialog),
+        )
+        if hr != 0 or not dialog:
+            raise OSError(f"CoCreateInstance failed: 0x{hr & 0xFFFFFFFF:08X}")
+
+        vtable = ctypes.cast(
+            ctypes.cast(dialog, ctypes.POINTER(ctypes.c_void_p))[0],
+            ctypes.POINTER(ctypes.c_void_p * 28),
+        ).contents
+
+        get_options = ctypes.WINFUNCTYPE(
+            ctypes.HRESULT, ctypes.c_void_p, ctypes.POINTER(ctypes.c_uint)
+        )(vtable[10])
+        set_options = ctypes.WINFUNCTYPE(
+            ctypes.HRESULT, ctypes.c_void_p, ctypes.c_uint
+        )(vtable[9])
+        opts = ctypes.c_uint(0)
+        get_options(dialog, ctypes.byref(opts))
+        set_options(
+            dialog,
+            opts.value | fos_pickfolders | fos_forcefilesystem | fos_nochagedir,
+        )
+
+        if prompt:
+            set_title = ctypes.WINFUNCTYPE(
+                ctypes.HRESULT, ctypes.c_void_p, wintypes.LPCWSTR
+            )(vtable[17])
+            set_title(dialog, prompt)
+
+        show = ctypes.WINFUNCTYPE(
+            ctypes.HRESULT, ctypes.c_void_p, wintypes.HWND
+        )(vtable[3])
+        hr = show(dialog, None)
+        if hr == hresult_cancelled or hr != 0:
+            raise subprocess.CalledProcessError(1, "windows-folder-picker")
+
+        get_result = ctypes.WINFUNCTYPE(
+            ctypes.HRESULT, ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)
+        )(vtable[20])
+        item = ctypes.c_void_p()
+        hr = get_result(dialog, ctypes.byref(item))
+        if hr != 0 or not item:
+            raise subprocess.CalledProcessError(1, "windows-folder-picker")
+        try:
+            item_vtable = ctypes.cast(
+                ctypes.cast(item, ctypes.POINTER(ctypes.c_void_p))[0],
+                ctypes.POINTER(ctypes.c_void_p * 6),
+            ).contents
+            get_display_name = ctypes.WINFUNCTYPE(
+                ctypes.HRESULT,
+                ctypes.c_void_p,
+                ctypes.c_uint,
+                ctypes.POINTER(wintypes.LPWSTR),
+            )(item_vtable[5])
+            path_ptr = wintypes.LPWSTR()
+            hr = get_display_name(item, sigdn_filesystem, ctypes.byref(path_ptr))
+            if hr != 0 or not path_ptr:
+                raise OSError(f"GetDisplayName failed: 0x{hr & 0xFFFFFFFF:08X}")
+            path = path_ptr.value
+            ole32.CoTaskMemFree(path_ptr)
+            if not path:
+                raise subprocess.CalledProcessError(1, "windows-folder-picker")
+            return str(path)
+        finally:
+            _windows_com_release(item)
+    finally:
+        if dialog:
+            try:
+                _windows_com_release(dialog)
+            except Exception:
+                pass
+        try:
+            ole32.CoUninitialize()
+        except Exception:
+            pass
+
+
 def _pick_folder_via_powershell(prompt: str) -> str:
-    # FolderBrowserDialog needs STA; escape single quotes for PowerShell literal.
+    """Legacy fallback: old tree-style FolderBrowserDialog."""
     safe = prompt.replace("'", "''")
     script = (
         "Add-Type -AssemblyName System.Windows.Forms; "
@@ -477,7 +611,16 @@ def _pick_folder(*, lang: str = DEFAULT_LANG) -> str:
     if system == "Darwin":
         return _pick_folder_via_osascript(prompt)
     if system == "Windows":
-        return _pick_folder_via_powershell(prompt)
+        try:
+            return _pick_folder_via_windows_explorer(prompt)
+        except subprocess.CalledProcessError:
+            raise
+        except Exception as e:
+            logging.getLogger("faceit_ai").warning(
+                "modern Windows folder picker failed (%s); falling back to legacy dialog",
+                e,
+            )
+            return _pick_folder_via_powershell(prompt)
     # Linux / other: prefer zenity, then tkinter.
     try:
         return _pick_folder_via_zenity(prompt)

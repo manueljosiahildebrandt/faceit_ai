@@ -13,6 +13,7 @@ import subprocess
 import threading
 import time
 import webbrowser
+import concurrent.futures
 from faceit_ai.multipart_form import MultipartForm, parse_multipart
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -102,10 +103,34 @@ def _people_folder_names(root: Path) -> list[str]:
     return names
 
 
+# Photo counts walk the people tree on NAS — cache aggressively for UI responsiveness.
+_PHOTO_COUNT_CACHE_TTL_S = 60.0
+_photo_count_cache: dict[str, tuple[float, int, int]] = {}
+
+
+def _photo_count_cache_key(person_dir: Path) -> str:
+    try:
+        return str(person_dir.expanduser().resolve())
+    except OSError:
+        return str(person_dir)
+
+
+def _invalidate_people_photo_counts(person_dir: Path | None = None) -> None:
+    if person_dir is None:
+        _photo_count_cache.clear()
+        return
+    _photo_count_cache.pop(_photo_count_cache_key(person_dir), None)
+
+
 def _count_photos_in_person_folder(person_dir: Path) -> tuple[int, int]:
     """Return (total_scannable, gallery_browser_count)."""
     if not person_dir.is_dir():
         return 0, 0
+    key = _photo_count_cache_key(person_dir)
+    now = time.monotonic()
+    hit = _photo_count_cache.get(key)
+    if hit is not None and hit[0] > now:
+        return hit[1], hit[2]
     try:
         settings = load_settings()
         paths = list_scannable_image_paths(
@@ -116,7 +141,9 @@ def _count_photos_in_person_folder(person_dir: Path) -> tuple[int, int]:
     except Exception:
         paths = [p for p in person_dir.rglob("*") if p.is_file()]
     gallery = [p for p in paths if p.suffix.lower() in _GALLERY_EXTENSIONS]
-    return len(paths), len(gallery)
+    total, gallery_n = len(paths), len(gallery)
+    _photo_count_cache[key] = (now + _PHOTO_COUNT_CACHE_TTL_S, total, gallery_n)
+    return total, gallery_n
 
 
 class AppState:
@@ -152,6 +179,8 @@ class AppState:
         self._last_live_counts_ts: float = 0.0
         self.current_proc: subprocess.Popen[str] | None = None
         self.stop_requested = False
+        # Last known People mismatch warn (avoid full NAS walk on every page header).
+        self.people_has_mismatch = False
 
     def add_log(self, line: str) -> None:
         with self.lock:
@@ -975,6 +1004,7 @@ def _scan_people_plan_and_start(root_text: str, *, lang: str = DEFAULT_LANG) -> 
 
     STATE.set_last_paths(people_root=str(root))
     _persist_people_dir(str(root))
+    _invalidate_people_photo_counts()
 
     folder_names = set(_people_folder_names(root))
     settings = load_settings()
@@ -1449,13 +1479,28 @@ def _update_person_tags_request(form: dict[str, str], *, lang: str = DEFAULT_LAN
     with session_scope(session_factory) as session:
         sync_person_profile_to_db(session, folder_name=slug, folder=folder)
     tag_dicts = tags_to_dicts(profile.tags)
-    return {"ok": True, "message": _t("api.tags_updated", lang), "tags": tag_dicts}
+    name_js = json.dumps(slug)
+    tag_names = [
+        str(t.get("tag") or "").strip()
+        for t in tag_dicts
+        if isinstance(t, dict) and str(t.get("tag") or "").strip()
+    ]
+    return {
+        "ok": True,
+        "message": _t("api.tags_updated", lang),
+        "tags": tag_dicts,
+        "tags_html": _tags_cell_html(name_js, tag_dicts, slug, lang=lang),
+        "sort_tags": " ".join(tag_names).lower(),
+        "tag_names": tag_names,
+    }
 
 
 def _list_people_rows() -> list[dict[str, object]]:
     """Overview = subfolders of the people root, joined with DB registration status."""
     root = _resolved_people_root()
     if root is None:
+        with STATE.lock:
+            STATE.people_has_mismatch = False
         return []
 
     if not STATE.people_root_last:
@@ -1465,10 +1510,8 @@ def _list_people_rows() -> list[dict[str, object]]:
     settings = load_settings()
     _, session_factory = create_engine_and_session_factory(settings.database_url)
 
-    with session_scope(session_factory) as session:
-        for name in folder_names:
-            sync_person_profile_to_db(session, folder_name=name, folder=root / name)
-
+    # Read-only join — do not sync every person.json on each UI refresh (that was a
+    # multi-second NAS/DB tax on every page that touched the People nav warn).
     by_name: dict[str, dict[str, object]] = {}
     with session_scope(session_factory) as session:
         stmt = (
@@ -1513,8 +1556,23 @@ def _list_people_rows() -> list[dict[str, object]]:
             }
 
     out: list[dict[str, object]] = []
+    # Parallelize NAS photo walks — sequential rglob dominates People page load time.
+    photo_counts: dict[str, tuple[int, int]] = {}
+    if folder_names:
+        workers = min(8, len(folder_names))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+            futs = {
+                pool.submit(_count_photos_in_person_folder, root / name): name
+                for name in folder_names
+            }
+            for fut in concurrent.futures.as_completed(futs):
+                name = futs[fut]
+                try:
+                    photo_counts[name] = fut.result()
+                except Exception:
+                    photo_counts[name] = (0, 0)
     for name in folder_names:
-        total, gallery_n = _count_photos_in_person_folder(root / name)
+        total, gallery_n = photo_counts.get(name, (0, 0))
         info = by_name.get(name)
         profile = profile_for_folder(root / name, name)
         display = (
@@ -1555,51 +1613,141 @@ def _list_people_rows() -> list[dict[str, object]]:
                 "needs_reregister": _person_needs_reregister(total, embeddings),
             }
         )
+    with STATE.lock:
+        STATE.people_has_mismatch = any(bool(r.get("needs_reregister")) for r in out)
     return out
+
+
+def _is_year_tag(name: str) -> bool:
+    s = name.strip()
+    return s.isdigit() and len(s) == 4
+
+
+def _collapsed_visible_tag_names(names: list[str], *, limit: int = 8) -> set[str]:
+    """Which tags survive collapsed truncation: custom tags first, then latest years."""
+    if len(names) <= limit:
+        return set(names)
+    years = [n for n in names if _is_year_tag(n)]
+    custom = [n for n in names if not _is_year_tag(n)]
+    custom_sorted = sorted(custom, key=lambda s: s.casefold())
+    if len(custom_sorted) >= limit:
+        return set(custom_sorted[:limit])
+    selected = list(custom_sorted)
+    remaining = limit - len(selected)
+    years_desc = sorted(years, key=lambda y: int(y), reverse=True)
+    selected.extend(years_desc[:remaining])
+    return set(selected)
+
+
+def _display_ordered_tags(tags: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Years ascending, then custom tags alphabetically."""
+    years: list[dict[str, str]] = []
+    custom: list[dict[str, str]] = []
+    for tag_row in tags:
+        name = str(tag_row.get("tag") or "").strip()
+        if not name:
+            continue
+        if _is_year_tag(name):
+            years.append(tag_row)
+        else:
+            custom.append(tag_row)
+    years.sort(key=lambda r: int(str(r.get("tag") or "0")))
+    custom.sort(key=lambda r: str(r.get("tag") or "").casefold())
+    return years + custom
+
+
+def _tag_pill_html(
+    name_js: str, tag_name: str, consent: str, lang: str = DEFAULT_LANG
+) -> str:
+    consent_n = consent.strip().lower() if consent else "blocked"
+    if consent_n not in ("blocked", "allowed", "none"):
+        consent_n = "blocked"
+    te = html.escape(tag_name)
+    t_js = json.dumps(tag_name)
+    tip = html.escape(_t("people.tag.consent_tip", lang, tag=tag_name))
+    remove_aria = html.escape(_t("people.tag.remove_aria", lang))
+    return (
+        f'<span class="tag-pill tag-consent-{consent_n}" title="{tip}">'
+        f"<span class='tag-body' onclick='cycleTagConsent(event, {name_js}, {t_js})'>{te}</span>"
+        f"<button type='button' class='tag-remove' "
+        f"onclick='removePersonTag({name_js}, {t_js})' aria-label='{remove_aria}'>&times;</button>"
+        f"</span>"
+    )
+
+
+def _tag_rows_html(pills: list[str], add_btn: str) -> str:
+    """Chunk pills into rows of 4; ``+`` rides as a trailing 5th slot on the last row."""
+    if not pills:
+        return f'<div class="tag-row tag-row--last">{add_btn}</div>'
+    parts: list[str] = []
+    for i in range(0, len(pills), 4):
+        chunk = pills[i : i + 4]
+        is_last = i + 4 >= len(pills)
+        cls = "tag-row tag-row--last" if is_last else "tag-row"
+        extra = add_btn if is_last else ""
+        parts.append(f'<div class="{cls}">{"".join(chunk)}{extra}</div>')
+    return "".join(parts)
 
 
 def _tags_cell_html(
     name_js: str, tags: list[dict[str, str]], slug: str = "", lang: str = DEFAULT_LANG
 ) -> str:
-    pills: list[str] = []
-    person_tag_names: list[str] = []
-    for tag_row in tags:
+    ordered = _display_ordered_tags(tags)
+    person_tag_names = [str(r.get("tag") or "").strip() for r in ordered]
+    person_tag_names = [n for n in person_tag_names if n]
+    total = len(person_tag_names)
+    collapsed_visible = _collapsed_visible_tag_names(person_tag_names, limit=8)
+    has_overflow = total > 8
+
+    all_pills: list[str] = []
+    collapsed_pills: list[str] = []
+    for tag_row in ordered:
         tag_name = str(tag_row.get("tag") or "").strip()
         if not tag_name:
             continue
-        consent = str(tag_row.get("consent") or "blocked").strip().lower()
-        if consent not in ("blocked", "allowed", "none"):
-            consent = "blocked"
-        person_tag_names.append(tag_name)
-        te = html.escape(tag_name)
-        t_js = json.dumps(tag_name)
-        tip = html.escape(_t("people.tag.consent_tip", lang, tag=tag_name))
-        remove_aria = html.escape(_t("people.tag.remove_aria", lang))
-        pills.append(
-            f'<span class="tag-pill tag-consent-{consent}" title="{tip}">'
-            f"<span class='tag-body' onclick='cycleTagConsent(event, {name_js}, {t_js})'>{te}</span>"
-            f"<button type='button' class='tag-remove' "
-            f"onclick='removePersonTag({name_js}, {t_js})' aria-label='{remove_aria}'>&times;</button>"
-            f"</span>"
-        )
+        consent = str(tag_row.get("consent") or "blocked")
+        pill = _tag_pill_html(name_js, tag_name, consent, lang=lang)
+        all_pills.append(pill)
+        if tag_name in collapsed_visible:
+            collapsed_pills.append(pill)
+
     names_js = json.dumps(person_tag_names)
     slug_attr = html.escape(slug, quote=True)
     add_btn = (
-        f'<button type="button" class="tag-pill tag-add" data-person-slug="{slug_attr}" '
+        f'<button type="button" class="tag-pill tag-add tag-add-cell" '
+        f'data-person-slug="{slug_attr}" '
         f"onclick='openTagPicker(event, {name_js}, {names_js})'>+</button>"
     )
-    more_btn = (
-        f'<button type="button" class="tag-pill tag-more" '
-        f"onclick='toggleTagsExpand(event, this)'>"
-        f"{html.escape(_t('people.tag.more', lang))}</button>"
-    )
+    more_row = ""
+    if has_overflow:
+        more_row = (
+            f'<div class="tags-more-row">'
+            f'<button type="button" class="tag-pill tag-more" '
+            f"onclick='toggleTagsExpand(event, this)'>"
+            f"{html.escape(_t('people.tag.more', lang))}</button>"
+            f"</div>"
+        )
+    overflow_cls = " has-overflow" if has_overflow else ""
+    if has_overflow:
+        rows_html = (
+            f'<div class="tag-rows tag-rows--collapsed">'
+            f"{_tag_rows_html(collapsed_pills, add_btn)}"
+            f"</div>"
+            f'<div class="tag-rows tag-rows--expanded">'
+            f"{_tag_rows_html(all_pills, add_btn)}"
+            f"</div>"
+        )
+    else:
+        rows_html = (
+            f'<div class="tag-rows tag-rows--collapsed">'
+            f"{_tag_rows_html(all_pills, add_btn)}"
+            f"</div>"
+        )
     return (
-        f'<div class="tags-cell" data-tags-cell="1">'
-        f'<div class="tags-more-row">{more_btn}</div>'
-        f'<div class="tags-main">'
-        f'<div class="tags-cell-pills">{"".join(pills)}</div>'
-        f"{add_btn}"
-        f"</div>"
+        f'<div class="tags-cell{overflow_cls}" data-tags-cell="1" '
+        f'data-total="{total}">'
+        f"{more_row}"
+        f"{rows_html}"
         f"</div>"
     )
 
@@ -1656,6 +1804,19 @@ def _people_table_body_html(
         tags = [t for t in (r.get("tags") or []) if isinstance(t, dict)]
         tag_names = [str(t.get("tag") or "") for t in tags]
         consent_txt = _t("people.consent.allowed", lang) if r.get("consent") else _t("people.consent.blocked", lang)
+        search_core = html.escape(
+            " ".join(
+                [
+                    name_raw,
+                    display_raw,
+                    str(photos),
+                    str(embeddings),
+                    consent_txt,
+                    status_display,
+                ]
+            ).lower()
+        )
+        search_tags = html.escape(" ".join(tag_names).lower())
         search_text = html.escape(
             " ".join(
                 [
@@ -1749,6 +1910,7 @@ def _people_table_body_html(
         rows_html.append(
             f"<tr{row_cls} data-person-name=\"{html.escape(name_raw.lower())}\" "
             f'data-search-text="{search_text}" '
+            f'data-search-core="{search_core}" data-search-tags="{search_tags}" '
             f'data-sort-name="{sort_name}" data-sort-photos="{photos}" '
             f'data-sort-faces="{embeddings}" data-sort-consent="{sort_consent}" '
             f'data-sort-tags="{sort_tags}">'
@@ -1765,7 +1927,8 @@ def _people_table_body_html(
 
 def _people_mismatch_warn_visible(rows: list[dict[str, object]] | None = None) -> bool:
     if rows is None:
-        rows = _list_people_rows()
+        with STATE.lock:
+            return bool(STATE.people_has_mismatch)
     return any(bool(r.get("needs_reregister")) for r in rows)
 
 
@@ -2720,9 +2883,9 @@ h1 {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 4px;
-  width: fit-content;
-  max-width: 220px;
+  gap: 6px;
+  width: 100%;
+  max-width: 320px;
 }
 .tags-more-row {
   display: none;
@@ -2732,35 +2895,30 @@ h1 {
 .tags-cell.has-overflow .tags-more-row {
   display: flex;
 }
-.tags-main {
+.tag-rows {
   display: flex;
-  flex-wrap: nowrap;
-  align-items: flex-end;
-  gap: 6px;
-  min-width: 0;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
 }
-.tags-cell-pills {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+.tags-cell.has-overflow:not(.is-expanded) .tag-rows--expanded {
+  display: none;
+}
+.tags-cell.has-overflow.is-expanded .tag-rows--collapsed {
+  display: none;
+}
+.tag-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
   align-items: center;
-  justify-content: flex-start;
-  align-content: flex-start;
-  flex: 1 1 auto;
+}
+.tag-row--last {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+}
+.tag-row > .tag-pill {
   min-width: 0;
   max-width: 100%;
-  /* ~3 rows of tag pills */
-  max-height: 78px;
-  overflow: hidden;
-}
-.tags-cell.has-overflow:not(.is-expanded) .tags-cell-pills {
-  /* Clip oldest tags at the top; keep the latest years visible. */
-  align-content: flex-end;
-}
-.tags-cell.is-expanded .tags-cell-pills {
-  max-height: none;
-  overflow: visible;
-  align-content: flex-start;
 }
 .tag-pill.tag-more {
   cursor: pointer;
@@ -2770,7 +2928,7 @@ h1 {
 }
 .tag-pill.tag-more:hover { color: var(--text); border-color: var(--accent); }
 .tags-cell .tag-pill.tag-add {
-  flex: 0 0 auto;
+  justify-self: start;
   width: auto;
   min-width: 0;
   min-height: 0;
@@ -2782,6 +2940,7 @@ h1 {
   border: 1px solid var(--line);
   border-radius: 999px;
   color: var(--muted);
+  cursor: pointer;
 }
 .tag-picker-chip {
   flex: 0 0 auto;
@@ -3435,14 +3594,18 @@ a.person-link:hover { text-decoration: underline; }
     def _lang(self) -> str:
         return lang_from_cookie_header(self.headers.get("Cookie"))
 
-    def _header(self, active: str, subtitle_key: str) -> str:
+    def _header(self, active: str, subtitle_key: str, *, people_mismatch: bool | None = None) -> str:
         lang = self._lang()  # type: ignore[assignment]
         analyze_cls = "active" if active in ("analyze", "batch") else ""
         review_cls = "active" if active == "review" else ""
         settings_cls = "active" if active == "settings" else ""
         people_cls = "active" if active == "people" else ""
+        if people_mismatch is None:
+            with STATE.lock:
+                people_mismatch = bool(STATE.people_has_mismatch)
         people_link = _nav_people_link_html(
             active_cls=people_cls,
+            mismatch=people_mismatch,
             label=_t("nav.people", lang),
             mismatch_tip=_t("nav.people_mismatch_tip", lang),
         )
@@ -4430,13 +4593,14 @@ document.addEventListener('keydown', function(ev) {{
             lang = self._lang()
             people_root = (STATE.people_root_last or _load_people_dir_from_config()).strip()
             people_rows = _list_people_rows()
+            people_mismatch = _people_mismatch_warn_visible(people_rows)
             table_body = _people_table_body_html(people_rows, lang=lang)
             all_tags_js = json.dumps(_collect_all_people_tags(people_rows))
             body = f"""<!doctype html>
 <html><head><meta charset="utf-8"><title>{html.escape(_t("app.title.people", lang))}</title>
 {self._base_style()}
 </head><body>
-{self._header("people", "subtitle.people")}
+{self._header("people", "subtitle.people", people_mismatch=people_mismatch)}
 <fieldset><legend>{html.escape(_t("people.folder.legend", lang))}</legend>
   <form method="post" action="/scan_people" onsubmit="return scanPeople(event)">
     <div class="row">
@@ -4579,7 +4743,9 @@ function filterPeopleTable() {{
   if (!tbody) return;
   let visible = 0;
   tbody.querySelectorAll('tr[data-search-text]').forEach(function(tr) {{
-    const hay = (tr.dataset.searchText || '').toLowerCase();
+    const core = tr.dataset.searchCore || '';
+    const tags = tr.dataset.searchTags || '';
+    const hay = ((core + ' ' + tags).trim() || (tr.dataset.searchText || '')).toLowerCase();
     const show = !q || hay.indexOf(q) >= 0;
     tr.style.display = show ? '' : 'none';
     if (show) visible += 1;
@@ -4753,7 +4919,10 @@ function repositionTagPicker() {{
   if (!tagPopoverSlug) return;
   let btn = null;
   document.querySelectorAll('.tag-add[data-person-slug]').forEach(function(el) {{
-    if (el.getAttribute('data-person-slug') === tagPopoverSlug) btn = el;
+    if (el.getAttribute('data-person-slug') !== tagPopoverSlug) return;
+    // Prefer the visible + (collapsed vs expanded rows both exist in the DOM).
+    if (el.offsetParent === null && el.getClientRects().length === 0) return;
+    btn = el;
   }});
   const pop = document.getElementById('tag_picker');
   if (!btn || !pop || pop.style.display === 'none') return;
@@ -4800,20 +4969,19 @@ function openTagPicker(ev, slug, personTags) {{
 
 function initTagsOverflow() {{
   document.querySelectorAll('.tags-cell[data-tags-cell]').forEach(function(cell) {{
-    const pills = cell.querySelector('.tags-cell-pills');
     const moreBtn = cell.querySelector('.tag-more');
-    if (!pills) return;
+    const total = parseInt(cell.dataset.total || '0', 10);
     const wasExpanded = cell.classList.contains('is-expanded');
-    cell.classList.remove('has-overflow', 'is-expanded');
-    // Force collapsed measure.
-    void pills.offsetHeight;
-    const overflowing = pills.scrollHeight > pills.clientHeight + 1;
-    if (overflowing) cell.classList.add('has-overflow');
-    if (wasExpanded && overflowing) {{
+    const hasOverflow = total > 8;
+    cell.classList.toggle('has-overflow', hasOverflow);
+    if (!hasOverflow) {{
+      cell.classList.remove('is-expanded');
+    }} else if (wasExpanded) {{
       cell.classList.add('is-expanded');
-      if (moreBtn) moreBtn.textContent = t('people.tag.less');
-    }} else if (moreBtn) {{
-      moreBtn.textContent = t('people.tag.more');
+    }}
+    const expanded = cell.classList.contains('is-expanded');
+    if (moreBtn) {{
+      moreBtn.textContent = expanded ? t('people.tag.less') : t('people.tag.more');
     }}
   }});
 }}
@@ -4824,6 +4992,52 @@ function toggleTagsExpand(ev, btn) {{
   if (!cell) return;
   const expanded = cell.classList.toggle('is-expanded');
   btn.textContent = expanded ? t('people.tag.less') : t('people.tag.more');
+}}
+
+function findPersonRow(slug) {{
+  const key = String(slug || '').toLowerCase();
+  if (!key) return null;
+  const rows = document.querySelectorAll('#people_table_body tr[data-person-name]');
+  for (let i = 0; i < rows.length; i++) {{
+    if ((rows[i].dataset.personName || '') === key) return rows[i];
+  }}
+  return null;
+}}
+
+function applyPersonTagsUpdate(slug, d, opts) {{
+  opts = opts || {{}};
+  const tr = findPersonRow(slug);
+  if (!tr || !d || !d.tags_html) {{
+    return refreshPeopleTable(opts);
+  }}
+  const cell = tr.querySelector('.tags-cell');
+  const wasExpanded = !!(cell && cell.classList.contains('is-expanded'));
+  const td = cell ? cell.parentElement : null;
+  if (!td) {{
+    return refreshPeopleTable(opts);
+  }}
+  td.innerHTML = d.tags_html;
+  const neu = td.querySelector('.tags-cell');
+  if (neu) {{
+    const hasOverflow = parseInt(neu.dataset.total || '0', 10) > 8;
+    neu.classList.toggle('has-overflow', hasOverflow);
+    if (wasExpanded && hasOverflow) {{
+      neu.classList.add('is-expanded');
+      const moreBtn = neu.querySelector('.tag-more');
+      if (moreBtn) moreBtn.textContent = t('people.tag.less');
+    }}
+  }}
+  if (d.sort_tags != null) tr.dataset.sortTags = d.sort_tags;
+  if (d.tag_names) {{
+    tr.dataset.searchTags = d.tag_names.join(' ').toLowerCase();
+    const core = tr.dataset.searchCore || '';
+    tr.dataset.searchText = (core + ' ' + tr.dataset.searchTags).trim();
+  }}
+  if (opts.keepPickerOpen && tagPopoverSlug === slug) {{
+    tagPopoverPersonTags = tagNamesFromResponse(d);
+    reopenTagPickerContent();
+  }}
+  return Promise.resolve();
 }}
 
 function tagNamesFromResponse(d) {{
@@ -4885,7 +5099,7 @@ async function cycleTagConsent(ev, slug, tag) {{
     }});
     const d = await r.json();
     if (!d.ok) {{ alert(d.error || t('people.alert.tag_failed')); return; }}
-    await refreshPeopleTable();
+    await applyPersonTagsUpdate(slug, d, {{}});
   }} catch (e) {{
     alert(t('people.alert.tag_failed'));
   }}
@@ -4908,21 +5122,20 @@ async function updatePersonTags(slug, tag, remove, keepPickerOpen) {{
     }});
     const d = await r.json();
     if (!d.ok) {{ alert(d.error || t('people.alert.tag_failed')); return null; }}
-    if (keepPickerOpen && tagPopoverSlug === slug) {{
-      tagPopoverPersonTags = tagNamesFromResponse(d);
-      if (!remove) {{
-        const lower = String(tag).toLowerCase();
-        let found = false;
-        for (let i = 0; i < peopleAllTags.length; i++) {{
-          if (String(peopleAllTags[i]).toLowerCase() === lower) {{ found = true; break; }}
-        }}
-        if (!found) {{
-          peopleAllTags.push(tag);
-          peopleAllTags.sort();
-        }}
+    if (!remove) {{
+      const lower = String(tag).toLowerCase();
+      let found = false;
+      for (let i = 0; i < peopleAllTags.length; i++) {{
+        if (String(peopleAllTags[i]).toLowerCase() === lower) {{ found = true; break; }}
+      }}
+      if (!found) {{
+        peopleAllTags.push(tag);
+        peopleAllTags.sort();
       }}
     }}
-    await refreshPeopleTable({{ keepPickerOpen: !!(keepPickerOpen && tagPopoverSlug === slug) }});
+    await applyPersonTagsUpdate(slug, d, {{
+      keepPickerOpen: !!(keepPickerOpen && tagPopoverSlug === slug),
+    }});
     return d;
   }} catch (e) {{
     alert(t('people.alert.tag_failed'));

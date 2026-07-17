@@ -331,6 +331,14 @@
     "de": "{name} wird re-registriert (Embeddings löschen + Ordner erneut scannen)…",
     "en": "Re-registering {name} (wipe + rescan their folder)…"
   },
+  "api.reregister_all_msg": {
+    "de": "Re-Registrierung von {count} Personen gestartet (Embeddings löschen + Ordner erneut scannen)…",
+    "en": "Re-registering {count} people (wipe + rescan each folder)…"
+  },
+  "api.reregister_all_none": {
+    "de": "Keine Personen mit Fotos zum Re-Registrieren gefunden.",
+    "en": "No people with photos found to re-register."
+  },
   "api.scan_empty_error": {
     "de": "{summary} JPEG/PNG/RAW-Fotos in jeden Personenordner legen, dann erneut scannen.",
     "en": "{summary} Put JPEG/PNG/RAW photos inside each person folder, then scan again."
@@ -523,6 +531,10 @@
     "de": "Person hinzufügen…",
     "en": "Add person…"
   },
+  "people.btn.register_all": {
+    "de": "Alle registrieren",
+    "en": "Register all"
+  },
   "people.btn.create": {
     "de": "Person erstellen",
     "en": "Create person"
@@ -562,6 +574,10 @@
   "people.confirm.reregister": {
     "de": "Embeddings für „{name}\" löschen und nur die Fotos in ihrem Ordner neu scannen? Andere Personen bleiben unverändert.",
     "en": "Wipe embeddings for \"{name}\" and re-scan only their folder photos? Other people are unchanged."
+  },
+  "people.confirm.reregister_all": {
+    "de": "Embeddings für ALLE Personen mit Fotos löschen und jeden Ordner neu scannen? Das kann länger dauern.",
+    "en": "Wipe embeddings for ALL people with photos and re-scan each folder? This can take a while."
   },
   "people.confirm.wipe_long": {
     "de": "Embeddings für „{name}\" löschen? Dadurch werden die Gesichts-Embeddings dauerhaft gelöscht (Fotos auf der Festplatte bleiben erhalten). Die Person wird deaktiviert und betroffene Fotos werden neu gekennzeichnet. Für ein weiches Entfernen den Ordnerabgleich bevorzugen, falls die Person nächstes Jahr eventuell wieder benötigt wird.",
@@ -738,6 +754,10 @@
   "people.msg.reregistering": {
     "de": "{name} wird re-registriert…",
     "en": "Re-registering {name}…"
+  },
+  "people.msg.reregistering_all": {
+    "de": "Alle Personen werden re-registriert…",
+    "en": "Re-registering all people…"
   },
   "people.msg.saving": {
     "de": "Person wird gespeichert…",

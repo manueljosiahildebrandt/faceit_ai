@@ -851,6 +851,108 @@ def _reregister_person(name: str, *, lang: str = DEFAULT_LANG) -> dict[str, obje
     }
 
 
+def _reregister_all_people(*, lang: str = DEFAULT_LANG) -> dict[str, object]:
+    """Wipe embeddings and re-run register_person for every person folder with photos."""
+    if bool(STATE.snapshot()["running"]):
+        return {"ok": False, "error": _t("api.job_running", lang)}
+    if not _resolved_people_root():
+        return {"ok": False, "error": _t("api.choose_people_folder", lang)}
+
+    targets: list[tuple[str, Path]] = []
+    for row in _list_people_rows():
+        name = str(row.get("name") or "").strip()
+        if not name or int(row.get("photos") or 0) <= 0:
+            continue
+        person_dir = _safe_person_dir(name)
+        if person_dir is None:
+            continue
+        targets.append((name, person_dir))
+
+    if not targets:
+        return {"ok": False, "error": _t("api.reregister_all_none", lang)}
+
+    def _worker() -> None:
+        try:
+            STATE.reset_for_run("Re-register all")
+            STATE.add_activity(f"Re-registering {len(targets)} people from their folders…")
+            failed: list[str] = []
+            settings = load_settings()
+            _, session_factory = create_engine_and_session_factory(settings.database_url)
+            for name, person_dir in targets:
+                with STATE.lock:
+                    if STATE.stop_requested:
+                        break
+                STATE.set_stage(f"Re-registering {name}")
+                STATE.add_activity(f"Re-registering {name}…")
+                with session_scope(session_factory) as session:
+                    person = session.scalar(select(Person).where(Person.name == name))
+                    if person is not None:
+                        person.active = True
+                        session.execute(
+                            FaceEmbedding.__table__.delete().where(
+                                FaceEmbedding.person_id == int(person.id)
+                            )
+                        )
+                cmd = [
+                    _cli_path("register_person"),
+                    str(person_dir),
+                    "--name",
+                    name,
+                    "--no-consent",
+                ]
+                STATE.add_log("$ " + " ".join(cmd))
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                    start_new_session=True,
+                )
+                STATE.set_current_proc(proc)
+                assert proc.stdout is not None
+                for line in proc.stdout:
+                    t = line.rstrip("\n")
+                    if _is_tqdm_progress_line(t):
+                        continue
+                    STATE.add_log(t)
+                rc = proc.wait()
+                STATE.set_current_proc(None)
+                with STATE.lock:
+                    stopped = STATE.stop_requested
+                if stopped:
+                    STATE.add_log("[warn] re-register all stopped by user")
+                    failed.append(name)
+                    break
+                if rc != 0:
+                    STATE.add_log(f"[error] re-register failed for {name} (exit {rc})")
+                    STATE.inc_error()
+                    STATE.add_activity(f"Re-register failed for {name}.")
+                    failed.append(name)
+                    continue
+                STATE.add_activity(f"Re-registered {name}.")
+            if failed:
+                STATE.add_activity(
+                    f"Re-register all finished with {len(failed)} failure(s)."
+                )
+                STATE.finish_run(False)
+            else:
+                STATE.add_activity(f"Re-registered all {len(targets)} people.")
+                STATE.finish_run(True)
+        except (OSError, subprocess.SubprocessError) as e:
+            STATE.add_log(f"[error] {e}")
+            STATE.inc_error()
+            STATE.finish_run(False)
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return {
+        "ok": True,
+        "syncing": True,
+        "count": len(targets),
+        "message": _t("api.reregister_all_msg", lang, count=len(targets)),
+    }
+
+
 def _scan_people_root(root_text: str) -> None:
     """Non-AJAX fallback: run the same folder sync."""
     result = _scan_people_plan_and_start(root_text)
@@ -4317,7 +4419,7 @@ document.addEventListener('keydown', function(ev) {{
     <th class="sortable" style="text-align:left" data-sort-key="faces" onclick="sortPeopleTable('faces')">{html.escape(_t("people.col.faces", lang))}{_help_mark(_t("people.col.faces_help", lang))}</th>
     <th class="sortable" style="text-align:left" data-sort-key="consent" onclick="sortPeopleTable('consent')">{html.escape(_t("people.col.consent", lang))}</th>
     <th class="sortable" style="text-align:left" data-sort-key="tags" onclick="sortPeopleTable('tags')">{html.escape(_t("people.col.tags", lang))}</th>
-    <th style="text-align:right"></th>
+    <th style="text-align:right"><button type="button" class="btn-small btn-muted" onclick="reregisterAllPeople()">{html.escape(_t("people.btn.register_all", lang))}</button></th>
   </tr></thead>
   <tbody id="people_table_body">{table_body}</tbody>
   </table>
@@ -4971,6 +5073,34 @@ async function reregisterPerson(name) {{
   return false;
 }}
 
+async function reregisterAllPeople() {{
+  if (!confirm(t('people.confirm.reregister_all'))) {{
+    return false;
+  }}
+  const res = document.getElementById('scan_result');
+  const prog = document.getElementById('scan_progress');
+  res.style.color = '#9aa4b2';
+  res.textContent = t('people.msg.reregistering_all');
+  prog.textContent = '';
+  try {{
+    const r = await fetch('/api/reregister_all_people', {{ method: 'POST' }});
+    const d = await r.json();
+    if (!d.ok) {{
+      res.style.color = '#ef6b73';
+      res.textContent = d.error || t('people.msg.reregister_failed');
+      return false;
+    }}
+    res.style.color = '#3cc087';
+    res.textContent = d.message || t('common.done');
+    if (d.syncing) pollPeopleJob();
+    else await refreshPeopleTable();
+  }} catch (e) {{
+    res.style.color = '#ef6b73';
+    res.textContent = t('people.msg.reregister_failed') + ': ' + e;
+  }}
+  return false;
+}}
+
 function escapeHtmlAttr(s) {{
   return String(s)
     .replace(/&/g, '&amp;')
@@ -5554,6 +5684,9 @@ setInterval(poll, 1000); poll();
             return
         if parsed.path == "/api/reregister_person":
             self._send_json(_reregister_person(form.get("name", ""), lang=lang))
+            return
+        if parsed.path == "/api/reregister_all_people":
+            self._send_json(_reregister_all_people(lang=lang))
             return
         if parsed.path == "/api/stop_run":
             self._send_json(_stop_run(lang=lang))
